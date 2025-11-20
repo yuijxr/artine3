@@ -42,33 +42,68 @@ function refreshCartState(){
 
 // Show styled notifications
 function showNotification(message, type = 'info') {
-    // prevent overlapping toasts: if one is visible, ignore new ones
-    if (window._notificationVisible) return;
-    window._notificationVisible = true;
+    try {
+        // Create the stack container if it does not exist
+        let stack = document.getElementById('notification-stack');
+        if (!stack) {
+            stack = document.createElement('div');
+            stack.id = 'notification-stack';
+            stack.style.cssText = `
+                position: fixed;
+                top: 100px;
+                right: 40px;
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end; 
+                gap: 10px;
+                z-index: 10000;
+                pointer-events: none;
+            `;
+            document.body.appendChild(stack);
+        }
 
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.style.cssText = `
-        position: fixed;
-        top: 100px;
-        right: 40px;
-        background: ${type === 'error' ? '#e11d48' : type === 'success' ? '#10b981' : '#0095FF'};
-        color: white;
-        padding: 15px 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        z-index: 10000;
-        transform: translateX(100%);
-        transition: transform 0.3s ease;
-    `;
-    notification.textContent = message;
-    document.body.appendChild(notification);
-    setTimeout(() => { notification.style.transform = 'translateX(0)'; }, 100);
-    setTimeout(() => {
-        notification.style.transform = 'translateX(100%)';
-        setTimeout(() => { notification.remove(); window._notificationVisible = false; }, 300);
-    }, 3000);
+        // Create notification toast
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.style.cssText = `
+            pointer-events: auto;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            color: white;
+            background: ${type === 'error' ? '#e11d48' : type === 'success' ? '#10b981' : '#0095FF'};
+            transform: translateX(100%);
+            opacity: 0;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            width: auto;  // Explicitly set to auto for clarity (though not strictly needed)
+        `;
+
+        notification.textContent = message;
+        stack.appendChild(notification);
+        notification.offsetHeight; 
+        notification.style.transform = 'translateX(0)';
+        notification.style.opacity = '1';
+
+        const timeout = setTimeout(() => dismiss(), 5000);
+
+        notification.addEventListener('click', () => {
+            clearTimeout(timeout);
+            dismiss();
+        });
+
+        function dismiss() {
+            notification.style.transform = 'translateX(100%)';
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                try { notification.remove(); } catch (e) {}
+            }, 300);
+        }
+
+    } catch (e) {
+        alert(message);
+    }
 }
+
 
 // Show forgot-password flow: navigate to password reset request page (or open in new tab)
 function showForgotPassword() {
@@ -123,24 +158,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
             });
         }
     } catch(e) { console.error('live search init failed', e); }
-    // If a hash is present (e.g. #shirts, #caps, #perfumes), filter product tiles accordingly
-    try{
-        const hash = (window.location.hash || '').replace('#','').toLowerCase();
-        const productsGrid = document.querySelector('.products-grid');
-        if (hash && productsGrid) {
-            const cards = productsGrid.querySelectorAll('.product-card');
-            cards.forEach(c => {
-                const cat = (c.dataset.category || '').toLowerCase();
-                c.style.display = (cat.indexOf(hash.replace(/s$/,'')) !== -1 || cat.indexOf(hash) !== -1) ? '' : 'none';
-            });
-            // update header active link
-            try{
-                document.querySelectorAll('.header-fixed .header-left a').forEach(a => a.classList.remove('active'));
-                const link = document.querySelector('.header-fixed .header-left a[href*="' + (window.location.pathname.split('/').pop() || 'index.php') + '?category=' + hash + '"]');
-                if (link) link.classList.add('active');
-            }catch(e){}
-        }
-    }catch(e){console.warn('hash filter failed', e)}
+    // legacy header hash/category filtering removed
     // Show notifications based on URL flags (login/logout) then remove them from URL
     try{
         const params = new URLSearchParams(window.location.search);
@@ -157,11 +175,40 @@ document.addEventListener('DOMContentLoaded', ()=>{
             if (typeof showNotification === 'function') showNotification('Logged out from all devices', 'info');
             params.delete('logged_out_all'); changed = true;
         }
+        // Payment related notifications (redirects from payment handlers)
+        if (params.get('order_placed')){
+            if (typeof showNotification === 'function') showNotification('Order placed', 'success');
+            params.delete('order_placed'); changed = true;
+        }
+        if (params.get('payment_success')){
+            if (typeof showNotification === 'function') showNotification('Payment successful', 'success');
+            params.delete('payment_success'); changed = true;
+        }
+        if (params.get('payment_failed')){
+            if (typeof showNotification === 'function') showNotification('Payment cancelled', 'error');
+            params.delete('payment_failed'); changed = true;
+        }
         // If we removed flags, replace the URL without reloading the page
         if (changed){
             const newSearch = params.toString();
-            const newUrl = window.location.pathname + (newSearch ? ('?' + newSearch) : '');
+            // Preserve the current hash (e.g. #orders) when replacing URL so fragments from redirects remain.
+            const newUrl = window.location.pathname + (newSearch ? ('?' + newSearch) : '') + (window.location.hash || '');
             history.replaceState({}, document.title, newUrl);
         }
     }catch(e){console.warn('notify-by-url failed', e)}
 });
+
+// If the page was opened with a `?q=` param, prefill and focus the header search input
+(function(){
+    try{
+        const params = new URLSearchParams(window.location.search || '');
+        const q = params.get('q');
+        if (!q) return;
+        const searchInput = document.querySelector('.header-search input[name="q"]');
+        if (!searchInput) return;
+        searchInput.value = q;
+        try { searchInput.focus({ preventScroll: true }); } catch(e){ searchInput.focus(); }
+        // trigger any input listeners (live search)
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }catch(e){/* ignore */}
+})();

@@ -62,12 +62,21 @@ async function loadCheckout(){
 
     // payment methods (render as address-like cards with radio on the right)
     const pmContainer = document.getElementById('payment-methods');
-    function needsModal(name){ return /gcash|credit|card/i.test(name || ''); }
+    // Only show modal for payment methods that actually need extra input (credit/card).
+    function needsModal(name){ return /credit|card/i.test(name || ''); }
     if (pmContainer) {
         pmContainer.innerHTML='';
         const methods = Array.isArray(pm) ? pm : [];
-        // choose initial selection if the first method does not require extra info
-        const initialIndex = (methods[0] && !needsModal(methods[0].name)) ? 0 : -1;
+        // choose initial selection: prefer user's default_payment_method_id if present
+        let initialIndex = -1;
+        try{
+            const defaultId = (window.CURRENT_USER && window.CURRENT_USER.default_payment_method_id) ? Number(window.CURRENT_USER.default_payment_method_id) : null;
+            if (defaultId) {
+                const idx = methods.findIndex(m => Number(m.method_id) === defaultId);
+                if (idx !== -1) initialIndex = idx;
+            }
+        }catch(e){}
+        if (initialIndex === -1) initialIndex = (methods[0] && !needsModal(methods[0].name)) ? 0 : -1;
         methods.forEach((m,i)=>{
             const card = document.createElement('div');
                 card.className = 'pm-card';
@@ -208,18 +217,48 @@ document.addEventListener('DOMContentLoaded', ()=>{
             });
         } else {
             placeBtn.addEventListener('click', async ()=>{
-            try {
-                const addrNode = document.querySelector('#addresses-list [data-address-id]');
-                if (!addrNode) { if (typeof showNotification === 'function') showNotification('Please add a delivery address first.', 'error'); else alert('Please add a delivery address first.'); return; }
-                const address_id = addrNode.getAttribute('data-address-id');
+                try {
+                    const addrNode = document.querySelector('#addresses-list [data-address-id]');
+                    if (!addrNode) { if (typeof showNotification === 'function') showNotification('Please add a delivery address first.', 'error'); else alert('Please add a delivery address first.'); return; }
+                    const address_id = addrNode.getAttribute('data-address-id');
                     const sel = document.querySelector('#payment-methods .pm-card.active');
                     const payment_method_id = sel ? sel.getAttribute('data-method-id') : null;
-                if (!payment_method_id) { if (typeof showNotification === 'function') showNotification('Please select a payment method.', 'error'); else alert('Please select a payment method.'); return; }
-                const res = await fetch('api/place_order.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({address_id:address_id,payment_method_id:payment_method_id})});
-                const j = await res.json();
-                if (j.success){ if (typeof showNotification === 'function') showNotification('Order placed!', 'success'); setTimeout(()=>{ window.location.href = 'account.php#orders'; },1200); }
-                else { if (typeof showNotification === 'function') showNotification(j.message || 'Order failed', 'error'); else alert(j.message || 'Order failed'); }
-            } catch (err) { if (typeof showNotification === 'function') showNotification('Failed to place order: ' + err.message, 'error'); else alert('Failed to place order: ' + err.message); }
+                    if (!payment_method_id) { if (typeof showNotification === 'function') showNotification('Please select a payment method.', 'error'); else alert('Please select a payment method.'); return; }
+
+                    // If selected payment method is GCash, redirect to pay.php (PayMongo) to create source and checkout
+                    const pmNameNode = sel ? sel.querySelector('.pm-name') : null;
+                    const pmName = pmNameNode ? pmNameNode.textContent : '';
+                    if (/gcash/i.test(pmName)){
+                        // For GCash: do NOT create the order yet. Redirect user to pay.php to create PayMongo source.
+                        // If payment succeeds we'll create the order server-side; if it fails, cart stays intact.
+                        const totalEl = document.getElementById('total');
+                        const priceStr = totalEl ? totalEl.textContent.trim() : '';
+                        // Build a POST form and submit to pay.php with price and optional user info
+                        const form = document.createElement('form');
+                        form.method = 'post';
+                        form.action = 'pay.php';
+                        const inpPrice = document.createElement('input'); inpPrice.type='hidden'; inpPrice.name='price'; inpPrice.value = priceStr;
+                        const inpMethod = document.createElement('input'); inpMethod.type='hidden'; inpMethod.name='payment_method'; inpMethod.value = 'gcash';
+                        // include selected address and payment method ids so server can create the order after successful payment
+                        const inpAddress = document.createElement('input'); inpAddress.type='hidden'; inpAddress.name='address_id'; inpAddress.value = address_id;
+                        const inpPmId = document.createElement('input'); inpPmId.type='hidden'; inpPmId.name='payment_method_id'; inpPmId.value = payment_method_id;
+                        form.appendChild(inpPrice); form.appendChild(inpMethod); form.appendChild(inpAddress); form.appendChild(inpPmId);
+                        if (window.CURRENT_USER){
+                            const inpName = document.createElement('input'); inpName.type='hidden'; inpName.name='name'; inpName.value = window.CURRENT_USER.name || '';
+                            const inpEmail = document.createElement('input'); inpEmail.type='hidden'; inpEmail.name='email'; inpEmail.value = window.CURRENT_USER.email || '';
+                            form.appendChild(inpName); form.appendChild(inpEmail);
+                        }
+                        document.body.appendChild(form);
+                        form.submit();
+                        return;
+                    }
+
+                    // Non-GCash flow: place order as before
+                    const res = await fetch('api/place_order.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({address_id:address_id,payment_method_id:payment_method_id})});
+                    const j = await res.json();
+                    if (j.success){ if (typeof showNotification === 'function') showNotification('Order placed!', 'success'); setTimeout(()=>{ window.location.href = 'account.php#orders'; },1200); }
+                    else { if (typeof showNotification === 'function') showNotification(j.message || 'Order failed', 'error'); else alert(j.message || 'Order failed'); }
+                } catch (err) { if (typeof showNotification === 'function') showNotification('Failed to place order: ' + err.message, 'error'); else alert('Failed to place order: ' + err.message); }
             });
         }
     }

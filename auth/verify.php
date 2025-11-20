@@ -29,6 +29,13 @@ if (!empty($_GET['email'])) {
                 $_SESSION['pending_2fa_user_id'] = intval($u['user_id']);
                 $_SESSION['pending_2fa_token_id'] = $res['id'] ?? null;
                 $_SESSION['pending_verification_purpose'] = 'email_verify';
+                // create a DB-based short resend cooldown so the reload shows the resend countdown
+                try {
+                    $resendPurpose = 'email_verify_resend';
+                    $locked_until = date('Y-m-d H:i:s', time() + 60);
+                    $ins = $conn->prepare('INSERT INTO verification_attempts (user_id,purpose,attempts,last_attempt,locked_until) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE locked_until = VALUES(locked_until), last_attempt = VALUES(last_attempt)');
+                    if ($ins) { $attemptsZero = 0; $now = date('Y-m-d H:i:s'); $ins->bind_param('isiss', $_SESSION['pending_2fa_user_id'], $resendPurpose, $attemptsZero, $now, $locked_until); $ins->execute(); $ins->close(); }
+                } catch (Throwable $_) {}
                 header('Location: /artine3/auth/verify.php');
                 exit;
             } else {
@@ -85,12 +92,39 @@ $info = '';
 
 $verify_lock_remaining = 0;
 try {
-    $va = $conn->prepare('SELECT attempts, locked_until FROM verification_attempts WHERE user_id = ? AND purpose = ? LIMIT 1');
+    $va = $conn->prepare('SELECT attempts, locked_until, lock_count_24h, last_lock FROM verification_attempts WHERE user_id = ? AND purpose = ? LIMIT 1');
     if ($va) { $va->bind_param('is', $pendingUser, $purpose); $va->execute(); $r = $va->get_result()->fetch_assoc(); $va->close();
         if ($r && !empty($r['locked_until'])) { $lu = strtotime($r['locked_until']); if ($lu > time()) $verify_lock_remaining = $lu - time(); }
     }
 } catch (Exception $_) {}
-if ($verify_lock_remaining > 0) $errors[] = 'Too many verification attempts. Please wait ' . intval($verify_lock_remaining/60) . 'm ' . ($verify_lock_remaining%60) . 's before trying again.';
+// Read any resend cooldown stored in DB (separate purpose: "$purpose_resend")
+$resend_lock_remaining = 0;
+try {
+    $resendPurpose = $purpose . '_resend';
+    $vr = $conn->prepare('SELECT locked_until FROM verification_attempts WHERE user_id = ? AND purpose = ? LIMIT 1');
+    if ($vr) { $vr->bind_param('is', $pendingUser, $resendPurpose); $vr->execute(); $rr = $vr->get_result()->fetch_assoc(); $vr->close();
+        if ($rr && !empty($rr['locked_until'])) { $rlu = strtotime($rr['locked_until']); if ($rlu > time()) $resend_lock_remaining = $rlu - time(); }
+    }
+} catch (Exception $_) { }
+
+// Helper: format verify lock for initial display (no seconds shown when hours present)
+function format_duration_display($secs) {
+    $s = max(0, intval($secs));
+    if ($s >= 3600) {
+        $h = intdiv($s, 3600);
+        $m = intdiv($s % 3600, 60);
+        $r = $s % 60;
+        return "{$h}h {$m}m {$r}s";
+    } elseif ($s >= 60) {
+        $m = intdiv($s, 60);
+        $r = $s % 60;
+        return "{$m}m {$r}s";
+    } else {
+        return "{$s}s";
+    }
+}
+
+$verify_lock_display = format_duration_display($verify_lock_remaining);
 
 // verification_codes table assumed to exist in schema
 
@@ -104,7 +138,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $urow = $conn->query('SELECT email, first_name FROM users WHERE user_id = ' . intval($pendingUser))->fetch_assoc();
             $to = $urow['email'] ?? ''; $name = trim(($urow['first_name'] ?? '')) ?: 'User';
             $res = create_and_send_verification_code($conn, intval($pendingUser), $to, $name, $purpose, 10);
-            if (!empty($res['success'])) { $_SESSION['pending_2fa_token_id'] = $res['id']; $pendingToken = $res['id']; $info = 'A new code was sent to your email.'; try { $r = $conn->prepare('DELETE FROM verification_attempts WHERE user_id = ? AND purpose = ?'); if ($r) { $r->bind_param('is', $pendingUser, $purpose); $r->execute(); $r->close(); } } catch (Exception $_) {} } else { $errors[] = 'Failed to resend code.'; }
+            if (!empty($res['success'])) {
+                // Store a DB-based short resend cooldown (purpose_resend) so reload shows the resend countdown
+                try {
+                    $resendPurpose = $purpose . '_resend';
+                    $locked_until = date('Y-m-d H:i:s', time() + 60);
+                    $ins = $conn->prepare('INSERT INTO verification_attempts (user_id,purpose,attempts,last_attempt,locked_until) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE locked_until = VALUES(locked_until), last_attempt = VALUES(last_attempt)');
+                    if ($ins) { $attemptsZero = 0; $now = date('Y-m-d H:i:s'); $ins->bind_param('isiss', $pendingUser, $resendPurpose, $attemptsZero, $now, $locked_until); $ins->execute(); $ins->close(); }
+                } catch (Throwable $_) {}
+                $_SESSION['pending_2fa_token_id'] = $res['id'];
+                $pendingToken = $res['id'];
+                $info = 'A new code was sent to your email.';
+                try { $r = $conn->prepare('DELETE FROM verification_attempts WHERE user_id = ? AND purpose = ?'); if ($r) { $r->bind_param('is', $pendingUser, $purpose); $r->execute(); $r->close(); } } catch (Exception $_) {}
+            } else { $errors[] = 'Failed to resend code.'; }
         } catch (Throwable $e) { if (!empty($conn)) $conn->rollback(); $errors[] = 'Failed to resend code.'; }
     } else {
         $code = preg_replace('/\D/', '', ($_POST['code'] ?? ''));
@@ -115,11 +161,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($stmt) { $idCheck = $pendingToken ? intval($pendingToken) : 0; $stmt->bind_param('iis', $idCheck, $pendingUser, $purpose); $stmt->execute(); $res = $stmt->get_result(); $row = $res ? $res->fetch_assoc() : null; $stmt->close(); } else { $row = null; }
 
                 if (!$row) {
-                    $errors[] = 'Verification token not found. Please request a new code.'; // increment attempts etc (omitted for brevity - same as before)
-                } else if (intval($row['used']) === 1) { $errors[] = 'This code has already been used. Request a new one.'; }
-                else if (strtotime($row['expires_at']) < time()) { $errors[] = 'This code has expired. Request a new one.'; }
-                else if (!password_verify($code, $row['code_hash'])) { $errors[] = 'Invalid code. Please try again.'; }
-                else {
+                    $errors[] = 'Verification token not found. Please request a new code.';
+                } else if (intval($row['used']) === 1) {
+                    $errors[] = 'This code has already been used. Request a new one.';
+                } else if (strtotime($row['expires_at']) < time()) {
+                    $errors[] = 'This code has expired. Request a new one.';
+                } else if (!password_verify($code, $row['code_hash'])) {
+                    // Invalid code -> increment verification_attempts and apply lock logic similar to login
+                    try {
+                        $attempt_window_min = 30; // window for decay
+                        $max_attempts = 10;
+                        // Insert or update with decay: reset attempts if last_attempt > window
+                        $ins = $conn->prepare('INSERT INTO verification_attempts (user_id, purpose, attempts, last_attempt) VALUES (?, ?, 1, NOW()) ON DUPLICATE KEY UPDATE attempts = IF(last_attempt >= NOW() - INTERVAL ? MINUTE, attempts + 1, 1), last_attempt = NOW()');
+                        if ($ins) { $ins->bind_param('isi', $pendingUser, $purpose, $attempt_window_min); $ins->execute(); $ins->close(); }
+
+                        // Check current attempts and existing lock_count
+                        $chk = $conn->prepare('SELECT attempts, locked_until, lock_count_24h FROM verification_attempts WHERE user_id = ? AND purpose = ? LIMIT 1');
+                        $recentAttempts = 0; $lockCount24h = 0;
+                        if ($chk) {
+                            $chk->bind_param('is', $pendingUser, $purpose);
+                            $chk->execute();
+                            $r = $chk->get_result()->fetch_assoc();
+                            $chk->close();
+                            $recentAttempts = intval($r['attempts'] ?? 0);
+                            $lockCount24h = intval($r['lock_count_24h'] ?? 0);
+                        }
+
+                        if ($recentAttempts >= $max_attempts) {
+                            // Determine lock duration: if this is 3rd lock (lockCount24h >= 2), lock 12 hours, otherwise 10 minutes
+                            $durationMin = ($lockCount24h >= 2) ? (12 * 60) : 10;
+                            $locked_until = date('Y-m-d H:i:s', time() + ($durationMin * 60));
+                            $newLockCount = ($lockCount24h > 0) ? ($lockCount24h + 1) : 1;
+
+                            $lu = $conn->prepare('UPDATE verification_attempts SET locked_until = ?, attempts = 0, last_lock = NOW(), lock_count_24h = ? WHERE user_id = ? AND purpose = ?');
+                            if ($lu) { $lu->bind_param('siis', $locked_until, $newLockCount, $pendingUser, $purpose); $lu->execute(); $lu->close(); }
+
+                            if ($durationMin >= 60) {
+                                $hours = intval($durationMin / 60);
+                                $mins = $durationMin % 60;
+                                $errors[] = "Too many verification attempts. Please wait {$hours}h {$mins}m before trying again.";
+                            } else {
+                                $errors[] = "Too many verification attempts. Please wait {$durationMin} minutes before trying again.";
+                            }
+                            // set verify_lock_remaining so UI will show countdown
+                            $verify_lock_remaining = max(0, strtotime($locked_until) - time());
+                        } else {
+                            $attempts_left = max(0, $max_attempts - $recentAttempts);
+                            $msg = 'Invalid code. Please try again.';
+                            if ($attempts_left > 0) {
+                                $msg .= " You have {$attempts_left} attempt" . ($attempts_left>1 ? 's' : '') . ' left.';
+                                if ($attempts_left === 1 && $lockCount24h >= 2) {
+                                    $msg .= ' Next failed attempt will lock your account for 12 hours.';
+                                } elseif ($attempts_left === 1) {
+                                    $msg .= ' Next failed attempt will lock your account for 10 minutes.';
+                                }
+                            }
+                            $errors[] = $msg;
+                        }
+                    } catch (Throwable $_) { $errors[] = 'Invalid code. Please try again.'; }
+                } else {
                     $conn->begin_transaction();
                     $u1 = $conn->prepare('UPDATE verification_codes SET used = 1 WHERE id = ?'); if ($u1) { $u1->bind_param('i', $row['id']); $u1->execute(); $u1->close(); }
                     // purpose handling (same as previous file)
@@ -161,25 +261,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="/artine3/assets/css/auth.css">
     <link rel="stylesheet" href="/artine3/assets/css/components.css">
     <link rel="stylesheet" href="/artine3/assets/css/style.css">
+    <link rel="stylesheet" href="/artine3/assets/css/style.css"><link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Dekko&family=Devonshire&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Outfit:wght@100..900&display=swap" rel="stylesheet">
     <title>Enter verification code</title>
     <style>
-        .code-inputs { display:flex; gap:8px; justify-content:center; margin:20px 0; }
-        .code-inputs input { width:48px; height:56px; font-size:28px; text-align:center; }
+        .code-inputs { display:flex; gap:5px; justify-content:center; margin:20px 0; }
+        .code-inputs input { font-size:24px; text-align:center; }
         .verify-card { max-width:540px; margin:40px auto; padding:20px; border:1px solid #eee; border-radius:8px; }
-        .small { font-size:13px; color:#666 }
+        .small { font-size:14px; color:#666; text-align: center; }
     </style>
 </head>
 <body>
     <?php include __DIR__ . '/../includes/simple_header.php'; ?>
-    <main class="auth-content">
+    <main class="main-content">
         <h1>Enter verification code</h1>
         <div class="auth-container">
             <div class="auth-forms">
-                <?php if (!empty($info)): ?><div class="notice" style="color:green"><?php echo htmlspecialchars($info); ?></div><?php endif; ?>
-                <?php if (!empty($errors)): ?><div class="error-box"><ul><?php foreach ($errors as $er) echo '<li>' . htmlspecialchars($er) . '</li>'; ?></ul></div><?php endif; ?>
+                <?php if (!empty($info)): ?><div class="form-message success"><?php echo htmlspecialchars($info); ?></div><?php endif; ?>
 
                 <?php if (!empty($verify_lock_remaining) && intval($verify_lock_remaining) > 0): ?>
-                    <div id="verifyLockNotice" class="error-box">Too many verification attempts. Please wait <span id="verifyTimer"><?php echo intval($verify_lock_remaining); ?></span> seconds before trying again.</div>
+                    <div id="verifyLockNotice" class="form-message field-error">Too many verification attempts. Please wait <span id="verifyTimer"><?php echo htmlspecialchars($verify_lock_display); ?></span> before trying again.</div>
                 <?php endif; ?>
 
                 <form method="post" id="verifyForm" class="auth-form">
@@ -192,11 +294,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" class="digit input-form" />
                         <input inputmode="numeric" pattern="[0-9]*" maxlength="1" class="digit input-form" />
                     </div>
+                    
+                    <?php if (!empty($errors)): ?>
+                        <div class="form-message field-error" role="alert">
+                            <ul>
+                            <?php foreach ($errors as $er) echo '<li>' . htmlspecialchars($er) . '</li>'; ?>
+                            </ul>
+                        </div>
+                    <?php endif; ?>
                     <input type="hidden" name="code" id="codeField" />
                     <div class="form-group" style="display:flex;gap:12px;justify-content:center;">
                         <button type="submit" class="big-btn btn primary">Verify</button>
                         <button type="button" id="resendBtn" class="big-btn btn">Resend code</button>
                     </div>
+                    
                     <input type="hidden" name="action" id="actionField" value="verify" />
                 </form>
             </div>
@@ -216,11 +327,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 inp.addEventListener('paste', (e) => { e.preventDefault(); const txt = (e.clipboardData || window.clipboardData).getData('text'); const digits = txt.replace(/\D/g,'').slice(0,6).split(''); for (let i=0;i<digits.length && i<inputs.length;i++) { inputs[i].value = digits[i]; } });
             });
             document.getElementById('verifyForm').addEventListener('submit', function(e){ const code = inputs.map(i=>i.value || '').join(''); if (code.length !== 6) { e.preventDefault(); alert('Please enter the 6-digit code'); return false; } document.getElementById('codeField').value = code; return true; });
-            document.getElementById('resendBtn').addEventListener('click', async function(){ if (!confirm('Resend verification code to your email?')) return; const form = document.getElementById('verifyForm'); document.getElementById('actionField').value = 'resend'; const data = new FormData(form); try { const res = await fetch('', { method: 'POST', body: data }); if (res.ok) { location.reload(); } else { alert('Failed to resend code'); } } catch (e) { alert('Failed to resend code'); } });
+            document.getElementById('resendBtn').addEventListener('click', async function(){
+                const btn = this;
+                if (!confirm('Resend verification code to your email?')) return;
+                // Show immediate sending state; do not start local countdown — server will provide authoritative lock on reload.
+                btn.disabled = true;
+                const prevText = btn.textContent;
+                btn.textContent = 'Sending...';
+
+                const form = document.getElementById('verifyForm'); document.getElementById('actionField').value = 'resend'; const data = new FormData(form);
+                try {
+                    const res = await fetch('', { method: 'POST', body: data });
+                    if (res.ok) {
+                        // Reload so server-side lock/time is authoritative and countdown begins on the next page load
+                        location.reload();
+                    } else {
+                        btn.disabled = false;
+                        btn.textContent = prevText;
+                        alert('Failed to resend code');
+                    }
+                } catch (e) {
+                    btn.disabled = false;
+                    btn.textContent = prevText;
+                    alert('Failed to resend code');
+                }
+            });
             inputs[0].focus();
         })();
-        (function(){ var secs = <?php echo json_encode(intval($verify_lock_remaining ?? 0)); ?>; if (secs > 0) { Array.from(document.querySelectorAll('#verifyForm input, #verifyForm button, #resendBtn')).forEach(function(el){ el.disabled = true; }); var timerEl = document.getElementById('verifyTimer'); function fmt(t){ var m = Math.floor(t/60); var s = t%60; return m+"m "+s+"s"; } if (timerEl) { timerEl.textContent = secs; } var iv = setInterval(function(){ secs--; if (secs <= 0) { clearInterval(iv); Array.from(document.querySelectorAll('#verifyForm input, #verifyForm button, #resendBtn')).forEach(function(el){ el.disabled = false; }); if (timerEl) timerEl.textContent = '0s'; return; } if (timerEl) timerEl.textContent = fmt(secs); }, 1000); } })();
+        (function(){
+            var dbSecs = <?php echo json_encode(intval($verify_lock_remaining ?? 0)); ?>;
+            var resendSecs = <?php echo json_encode(intval($resend_lock_remaining ?? 0)); ?>;
+            var timerEl = document.getElementById('verifyTimer');
+            var resendBtn = document.getElementById('resendBtn');
+            var verifySubmit = document.querySelector('#verifyForm button[type="submit"]');
+
+            function formatDurationSeconds(t){
+                t = Math.max(0, parseInt(t, 10) || 0);
+                if (t >= 3600) {
+                    var h = Math.floor(t / 3600);
+                    var m = Math.floor((t % 3600) / 60);
+                    var s = t % 60;
+                    return h + 'h ' + m + 'm ' + s + 's';
+                } else if (t >= 60) {
+                    var m = Math.floor(t / 60);
+                    var s = t % 60;
+                    return m + 'm ' + s + 's';
+                }
+                return t + 's';
+            }
+
+                // DB lock (too many verification attempts) -> disable inputs & verify submit, but keep resend button enabled
+                if (dbSecs > 0) {
+                // disable input fields and verify submit
+                Array.from(document.querySelectorAll('#verifyForm input[type="text"], #verifyForm input[type="number"], #verifyForm input[type="password"], #verifyForm input[type="tel"], #verifyForm .digit')).forEach(function(el){ el.disabled = true; });
+                if (verifySubmit) { verifySubmit.disabled = true; verifySubmit.style.opacity = '0.6'; verifySubmit.style.pointerEvents = 'none'; }
+                    if (timerEl) timerEl.textContent = formatDurationSeconds(dbSecs);
+                    var dbIv = setInterval(function(){ dbSecs--; if (dbSecs <= 0) { clearInterval(dbIv); Array.from(document.querySelectorAll('#verifyForm input, #verifyForm button')).forEach(function(el){ el.disabled = false; el.style.pointerEvents = ''; el.style.opacity = ''; }); if (timerEl) timerEl.textContent = '0s'; var lockNotice = document.getElementById('verifyLockNotice'); if (lockNotice) lockNotice.style.display = 'none'; return; } if (timerEl) timerEl.textContent = formatDurationSeconds(dbSecs); }, 1000);
+            }
+
+            // Resend cooldown -> disable only the resend button and show 60s countdown on it
+            if (resendSecs > 0) {
+                if (resendBtn) { resendBtn.disabled = true; resendBtn.style.pointerEvents = 'none'; resendBtn.style.opacity = '0.6'; resendBtn.textContent = 'Resend (' + resendSecs + 's)'; }
+                var rIv = setInterval(function(){ resendSecs--; if (resendSecs <= 0) { clearInterval(rIv); if (resendBtn) { resendBtn.disabled = false; resendBtn.style.pointerEvents = ''; resendBtn.style.opacity = ''; resendBtn.textContent = 'Resend code'; } return; } if (resendBtn) resendBtn.textContent = 'Resend (' + resendSecs + 's)'; }, 1000);
+            }
+        })();
     </script>
-    <?php include __DIR__ . '/../includes/footer.php'; ?>
 </body>
 </html>

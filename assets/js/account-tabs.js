@@ -186,9 +186,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
                             else ch.style.display = (s === val ? '' : 'none');
                         });
                     }));
-                    // set default to pending if none active
+                    // set default to 'all' if none active (show everything on open)
                     const hasActive = btns.some(b=> b.classList.contains('active-filter'));
-                    const defaultBtn = fe.querySelector('.orders-filter-btn[data-value="pending"]');
+                    const defaultBtn = fe.querySelector('.orders-filter-btn[data-value="all"]');
                     if (!hasActive && defaultBtn) defaultBtn.click();
                 }
             }catch(e){}
@@ -440,7 +440,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
                     // update actions area depending on status
                     actionsDiv.innerHTML = '';
                     const statusLower = (o.status||'').toLowerCase();
-                    const cancellable = ['pending','paid'].includes(statusLower);
+                    const cancellable = ['pending'].includes(statusLower);
                     // treat legacy 'complete' as delivered; use 'delivered' as canonical status
                     const completable = (statusLower === 'delivered' || statusLower === 'complete');
                     if (cancellable) {
@@ -580,9 +580,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
                     });
                 }));
 
-                // set default selected tab to 'pending' if none active
+                // set default selected tab to 'all' if none active
                 const hasActive = filterButtons.some(b=> b.classList.contains('active-filter'));
-                const defaultBtn = filterEl.querySelector('.orders-filter-btn[data-value="pending"]');
+                const defaultBtn = filterEl.querySelector('.orders-filter-btn[data-value="all"]');
                 if (!hasActive && defaultBtn) {
                     // trigger the click handler so filtering is applied to the already-rendered list
                     defaultBtn.click();

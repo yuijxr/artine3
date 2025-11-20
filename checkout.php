@@ -138,6 +138,13 @@ $user = current_user($conn);
     // Output the init data as a JS variable so checkout.js can use it synchronously
     $json = json_encode($init, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
     echo "<script>window.INIT_CHECKOUT_DATA = $json;</script>";
+    // Provide current logged-in user info to client-side (name, email) for payment pages
+    $user_js = json_encode([
+        'name' => trim((($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''))),
+        'email' => $user['email'] ?? '',
+        'default_payment_method_id' => isset($user['default_payment_method_id']) ? intval($user['default_payment_method_id']) : null
+    ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+    echo "<script>window.CURRENT_USER = $user_js;</script>";
     ?>
 
     <script src="assets/js/index.js"></script>

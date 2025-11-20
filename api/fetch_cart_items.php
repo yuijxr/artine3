@@ -26,7 +26,8 @@ while ($r = $res->fetch_assoc()) {
         'price' => $r['price'],
         'quantity' => $r['quantity'],
         'size' => $r['size'],
-        'image' => resolve_image_path($r['image_url'] ?: 'no-image.png', $r['category_name'])
+        'image' => resolve_image_path($r['image_url'] ?: 'no-image.png', $r['category_name']),
+        'category_name' => $r['category_name']
     ];
 }
 

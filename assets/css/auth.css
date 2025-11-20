@@ -81,22 +81,41 @@
 
 /* Inline form-level error / info messages for auth pages */
 .form-message {
-    border-radius: 6px;
-    padding: 12px 14px;
-    margin: 0 0 16px 0;
+    border-radius: 5px;
+    padding: 10px 15px;
+    margin: 0 0 15px 0;
     font-size: 14px;
+    background:#e6f3ff; 
+    border:1px solid #7fc1ff;
+    border-radius: 5px; 
+    color:#333;
 }
-.form-message.error {
+
+.form-message.error, .form-message.field-error {
     background: #fff1f2;
     color: #b91c1c;
     border: 1px solid #fecaca;
 }
-.form-message.info {
-    background: #ecfeff;
-    color: #055160;
-    border: 1px solid #99f6e4;
+
+.form-message.success {
+    background: #ecfdf5;
+    font-weight:600;
+    color: #166534;
+    border: 1px solid #bbf7d0;
 }
+
 .form-message.hidden { display: none; }
+
+
+.form-message ul {
+    margin-top: 5px;
+    margin-left: 20px
+}
+
+.form-message li{
+    list-style-type: circle;
+    margin: 5px 0
+}
 
 
 /* ===== AUTH PAGE RESPONSIVE ===== */

@@ -24,21 +24,8 @@ if (is_logged_in()) {
 
 <header class="header-fixed">
 	<div class="header-container">
-		<!-- LEFT SIDE -->
+		<!-- LEFT SIDE (logo only) -->
 		<div class="header-left">
-		<?php
-		// Make the header active state page-aware: only highlight category links on the shop (index.php).
-		$curScript = basename($_SERVER['PHP_SELF'] ?? '');
-		$catParam = $_GET['category'] ?? null;
-		?>
-			<a href="/artine3/index.php" class="<?= ($curScript === 'index.php' && !$catParam ? 'active' : '') ?>">All</a>
-			<a href="/artine3/index.php?category=shirts" class="<?= ($curScript === 'index.php' && ($catParam === 'shirts') ? 'active' : '') ?>">Shirts</a>
-			<a href="/artine3/index.php?category=caps" class="<?= ($curScript === 'index.php' && ($catParam === 'caps') ? 'active' : '') ?>">Caps</a>
-			<a href="/artine3/index.php?category=perfumes" class="<?= ($curScript === 'index.php' && ($catParam === 'perfumes') ? 'active' : '') ?>">Perfumes</a>
-		</div>
-
-		<!-- CENTER (LOGO) -->
-		<div class="header-center">
 			<a href="/artine3/index.php" class="logo">
 				<img src="assets/img/logo.png" alt="artine3 Logo">
 			</a>
@@ -79,4 +66,39 @@ if (is_logged_in()) {
 		window.INIT_CART_COUNT = <?= intval($initialCartCount) ?>;
 		window.IS_LOGGED = <?= is_logged_in() ? 'true' : 'false' ?>;
 		window.IS_VERIFIED = <?= (is_logged_in() && (!empty($user['email_verified']))) ? 'true' : 'false' ?>;
+	</script>
+
+	<script>
+	// Redirect header search focus/input to catalog so users can continue searching on index.php
+	(function(){
+		try{
+			var searchEl = document.querySelector('.header-search input[name="q"]');
+			if (!searchEl) return;
+			var logoLink = document.querySelector('.header-left .logo');
+			var targetHref = logoLink ? logoLink.getAttribute('href') : '/index.php';
+
+			function redirectToIndexWithQuery(val){
+				try{
+					var current = (window.location.pathname || '').split('/').pop() || '';
+					var targetPage = (targetHref || '').split('/').pop() || 'index.php';
+					if (current === targetPage) return; // already on index
+					var q = encodeURIComponent(val || '');
+					var url = targetHref + (q ? ('?q=' + q) : '');
+					window.location.href = url;
+				}catch(e){}
+			}
+
+			// on focus, redirect immediately
+			searchEl.addEventListener('focus', function(){ redirectToIndexWithQuery(searchEl.value || ''); });
+
+			// on input, debounce then redirect so typing on other pages continues on index
+			var _deb = null;
+			searchEl.addEventListener('input', function(){
+				try{
+					if (_deb) clearTimeout(_deb);
+					_deb = setTimeout(function(){ redirectToIndexWithQuery(searchEl.value || ''); }, 300);
+				}catch(e){}
+			});
+		}catch(e){}
+	})();
 	</script>

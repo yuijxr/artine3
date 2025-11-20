@@ -36,45 +36,31 @@ body {
 .header-container {
     width: 100%;
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
     align-items: center;
     padding: 10px 120px;
 }
 
-.header-left, .header-center, .header-right {
+/* Variant for auth pages: only show centered logo and open link in new tab */
+.header-auth .header-container {
+    /* single column centered layout and smaller side padding for auth pages */
+    grid-template-columns: 1fr;
+    padding: 10px 20px;
+}
+
+.header-auth .header-left,
+.header-auth .header-right {
+    display: none;
+}
+
+.header-left, .header-right {
     display: flex;
     align-items: center;
-}
-
-.header-left {
-    gap: 10px;
-    justify-content: flex-start;
-}
-
-.header-center {
-    justify-content: center;
 }
 
 .header-right {
     gap: 10px;
     justify-content: flex-end;
-}
-
-.header-left a {
-    color: #000000;
-    font-weight: 500;
-    font-size: 16px;
-    padding: 10px 15px;
-    border-radius: 20px;
-    transition: 
-        background 0.18s,
-        color 0.18s,
-        box-shadow 0.18s;
-    position: relative;
-}
-
-.header-center .logo img{
-    width: 100%;
 }
 
 .header-search {
@@ -154,7 +140,7 @@ body {
     position: relative;
 }
 
-.header-right a:hover, .header-right button:hover, .header-left a.active, .header-left a:hover, .header-right a.active {
+.header-right a:hover, .header-right button:hover, .header-right a.active {
     background: linear-gradient(90deg, #e0e7ff 0%, #f1f5f9 100%);
     color: #0095FF;
     box-shadow: 0 2px 8px rgba(37,99,235,0.07);
@@ -247,12 +233,16 @@ body {
 }
 
 .main-content h1 {
-    font-family: 'Devonshire', sans-serif;
+    font-size: 48px;
+    font-weight: 500;
+    text-align: center;
+    margin: 20px 0 40px;
+}
+
+.main-content .welcome {
+    font-family: 'Devonshire', cursive;
     font-weight: lighter;
     letter-spacing: 10px;
-    font-size: 48px;
-    text-align: center;
-    margin: 20px;
 }
 
 /* ===== GLOBAL PAGES ===== */
@@ -314,3 +304,5 @@ body {
     padding-top: 20px;
     margin: 0 120px;
 }
+
+

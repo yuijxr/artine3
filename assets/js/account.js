@@ -587,28 +587,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const manageAddrs = document.getElementById('settings-manage-addresses');
     if (manageAddrs) manageAddrs.addEventListener('click', (e)=>{ e.preventDefault(); if (typeof window.openAddressManager === 'function') window.openAddressManager(); else document.getElementById('open-address-manager') && document.getElementById('open-address-manager').click(); });
 
-    const managePayments = document.getElementById('settings-manage-payments');
-    if (managePayments) managePayments.addEventListener('click', (e)=>{ e.preventDefault(); window.location.href = 'account.php#payments'; });
-
     // Make payment method cards behave like checkout: selectable and optionally show modal for extra info
     const paymentsList = document.getElementById('payments-list');
-    function needsPaymentModal(name){ return /gcash|credit|card/i.test(name || ''); }
+    // Only show modal for payment methods that actually need extra input (credit/card).
+    function needsPaymentModal(name){ return /credit|card/i.test(name || ''); }
     if (paymentsList) {
         paymentsList.addEventListener('click', (e)=>{
             const card = e.target.closest('.pm-card');
             if (!card) return;
             const name = card.querySelector('.pm-name') ? card.querySelector('.pm-name').textContent : '';
-            const selectCard = ()=>{
+            const methodId = card.getAttribute('data-method-id');
+            const selectCard = async ()=>{
                 paymentsList.querySelectorAll('.pm-card.active').forEach(c=>c.classList.remove('active'));
                 card.classList.add('active');
+                // Persist user's default payment method via API
+                try{
+                    const res = await fetch('api/set_default_payment_method.php', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ method_id: Number(methodId) }) });
+                    const j = await res.json();
+                    if (j && j.success) {
+                        notify('Default payment method updated', 'success');
+                    } else {
+                        notify(j.message || 'Failed to update default', 'error');
+                    }
+                }catch(err){ notify('Failed to update default', 'error'); }
             };
             if (!needsPaymentModal(name)) {
                 selectCard();
             } else {
-                // show a lightweight modal for extra info (reuse a simple prompt if payment-modal not present)
+                // show modal for extra info only for credit/card
                 const pmModal = document.getElementById('payment-modal');
                 if (pmModal) {
-                    // Build a small body depending on method
                     const title = pmModal.querySelector('#pm-modal-title');
                     const body = pmModal.querySelector('#pm-modal-body');
                     const confirm = pmModal.querySelector('#pm-modal-confirm');
@@ -616,8 +624,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const closeBtn = pmModal.querySelector('.pm-modal-close');
                     title.textContent = name + ' - Additional Info';
                     let html='';
-                    if (/gcash/i.test(name)) html = '<div class="form-group"><label>GCash Number</label><input class="input-form" id="pm-field" type="tel" placeholder="09xxxxxxxxx" required></div>';
-                    else html = '<div class="form-group"><label>Card Holder Name</label><input class="input-form" id="pm-field" type="text" placeholder="Name on card" required></div>';
+                    if (/credit|card/i.test(name)) html = '<div class="form-group"><label>Card Holder Name</label><input class="input-form" id="pm-field" type="text" placeholder="Name on card" required></div>';
+                    else html = '<div>No extra information required.</div>';
                     body.innerHTML = html;
                     pmModal.setAttribute('aria-hidden','false');
                     function hide(){ pmModal.setAttribute('aria-hidden','true'); removeListeners(); }
@@ -699,6 +707,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const faToggle = document.getElementById('settings-2fa-toggle');
     if (faToggle) faToggle.addEventListener('change', async (e)=>{
         const enable = faToggle.checked ? 1 : 0;
+        if (enable === 1) {
+            // Immediately show a persistent info toast while server sends the verification code
+            notify('Sending code, please wait', 'info');
+        }
+        // disable toggle to prevent repeated clicks while processing
+        faToggle.disabled = true;
         try {
             const res = await fetch('auth/2fa_toggle.php', {
                 method: 'POST',
@@ -710,34 +724,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 const j = await res.json().catch(()=>({success:false}));
                 if (j && j.success) {
                     if (enable === 1) {
-                        // Verification email was sent; 2FA is not active until verified.
-                        // Revert the checkbox to reflect the current active state in DB.
+                        // Verification email was requested. Keep the checkbox unchecked until verified.
                         faToggle.checked = false;
-                        notify(j.message || 'Verification email sent. Click the link in your email to enable 2FA.', 'info');
-                        // If server provided a redirect (to verify page), follow it so user can enter the code.
+                        // Update notification to the server-provided message (if any)
+                        notify(j.message || 'Verification code requested. Check your email.', 'info');
                         if (j.redirect) {
                             // small delay so the notification is visible before navigation
-                            setTimeout(() => { window.location.href = j.redirect; }, 200);
+                            setTimeout(() => { window.location.href = j.redirect; }, 300);
                         }
                     } else {
-                        // disabled successfully
                         notify(j.message || 'Two-factor disabled', 'success');
                     }
                 } else {
-                    // show server-provided message when available
                     notify(j && j.message ? j.message : 'Two-factor update failed','error');
                     // revert checkbox to previous state
                     faToggle.checked = enable === 1 ? false : true;
                 }
             } else {
                 notify('Two-factor update not available on server','error');
-                // revert checkbox
                 faToggle.checked = enable === 1 ? false : true;
             }
         } catch (err) {
-            // backend may not implement toggle endpoint; just show a hint and revert
-            notify('Two-factor toggle not available (server)', 'info');
+            notify('Two-factor toggle failed (server)', 'error');
             faToggle.checked = enable === 1 ? false : true;
+        } finally {
+            faToggle.disabled = false;
         }
     });
 
@@ -774,7 +785,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const logoutTime = li.getAttribute('data-logout-time') || '';
                 const labelEl = li.querySelector('.session-label');
                 if (!labelEl) return;
-
                 const now = Date.now();
                 let ts = null;
                 if (status !== 'active') {
@@ -785,24 +795,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 if (!ts || isNaN(ts)) {
-                    // fallback to existing text
+                    // if timestamp is invalid, keep existing label (avoid flashing)
                     return;
                 }
 
-                const diff = Math.floor((now - ts) / 1000);
-                let text = '';
+                // diff in seconds, never negative
+                let diff = Math.floor((now - ts) / 1000);
+                if (diff < 0) diff = 0;
+
+                // Helper to pluralize units
+                const fmt = (n, unit) => n === 1 ? `${n} ${unit} ago` : `${n} ${unit}s ago`;
+
+                let newText = '';
                 if (status !== 'active') {
-                    if (diff < 60) text = 'Logged out just now';
-                    else if (diff < 3600) text = 'Active ' + Math.floor(diff/60) + ' minutes ago';
-                    else if (diff < 86400) text = 'Active ' + Math.floor(diff/3600) + ' hours ago';
-                    else text = 'Active ' + Math.floor(diff/86400) + ' days ago';
+                    if (diff < 60) newText = 'Logged out just now';
+                    else if (diff < 3600) newText = 'Active ' + fmt(Math.floor(diff / 60), 'minute');
+                    else if (diff < 86400) newText = 'Active ' + fmt(Math.floor(diff / 3600), 'hour');
+                    else newText = 'Active ' + fmt(Math.floor(diff / 86400), 'day');
                 } else {
-                    if (diff < 5*60) text = 'Active now';
-                    else if (diff < 3600) text = 'Logged in ' + Math.floor(diff/60) + ' minutes ago';
-                    else if (diff < 86400) text = 'Logged in ' + Math.floor(diff/3600) + ' hours ago';
-                    else text = 'Last seen ' + Math.floor(diff/86400) + ' days ago';
+                    if (diff < 5 * 60) newText = 'Active now';
+                    else if (diff < 3600) newText = 'Logged in ' + fmt(Math.floor(diff / 60), 'minute');
+                    else if (diff < 86400) newText = 'Logged in ' + fmt(Math.floor(diff / 3600), 'hour');
+                    else newText = 'Last seen ' + fmt(Math.floor(diff / 86400), 'day');
                 }
-                labelEl.textContent = text;
+
+                // Only update DOM if text actually changed to avoid visual flashing
+                if (labelEl.textContent !== newText) labelEl.textContent = newText;
             });
         } catch (e) { console.warn('session label update failed', e); }
     }

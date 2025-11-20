@@ -17,6 +17,11 @@
             // convert legacy assets reference to uploads
             return String(image).replace(/assets\/img\//i, 'uploads/product_img/');
         }
+        // If image already contains a folder (e.g. 'caps/jessa.jpg'), treat it as a direct uploads path
+        if (String(image).indexOf('/') !== -1) {
+            let p = String(image).replace(/^\/+/, '');
+            return 'uploads/product_img/' + p;
+        }
         const cat = (category || '').toLowerCase();
         let folder = '';
         if (cat.indexOf('shirt') !== -1) folder = 'shirts/';

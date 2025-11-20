@@ -15,14 +15,14 @@ const BODY_SHAPES = [
     'Straight Body',
     'Curvy Body',
     'Body (to Fat)',
-    'Thin',
-    'Sitting'
+    'Thin'
 ];
 const POSE_SHAPES = [
     "'T' Pose",
     "'A' Pose",
     "'Hi' Pose",
-    "'Peace' Pose"
+    "'Peace' Pose",
+    'Sitting'
 ];
 
 // Utility: find a mesh that contains a given morph name
@@ -241,7 +241,7 @@ function initViewer() {
     const loader = new GLTFLoader().setPath('./'); // same folder
     let mannequin;
     loader.load(
-        'mannequin.glb',
+        'mannequin10.glb',
         (gltf) => {
             mannequin = gltf.scene;
             window.mannequin = mannequin; // Make mannequin globally available for button logic
@@ -263,18 +263,94 @@ function initViewer() {
                 }
             });
 
-            // === Dynamic morph target (shape key) control ===
+            // === Morph targets: sync by name across mannequin + clothing meshes ===
             const morphTargets = [
                 'Shoulders', 'Arms', 'Chest', 'Waist', 'Torso'
             ];
 
             // Find all meshes with morph targets
-            let morphMeshes = [];
+            const morphMeshes = [];
             mannequin.traverse((child) => {
                 if (child.isMesh && child.morphTargetDictionary) {
                     morphMeshes.push(child);
                 }
             });
+
+            // Build a mapping: morphName -> [{ mesh, index }]
+            const morphMap = {};
+            morphMeshes.forEach(mesh => {
+                const dict = mesh.morphTargetDictionary || {};
+                for (const name in dict) {
+                    if (!Object.prototype.hasOwnProperty.call(dict, name)) continue;
+                    const idx = dict[name];
+                    if (!morphMap[name]) morphMap[name] = [];
+                    morphMap[name].push({ mesh, index: idx });
+                }
+            });
+
+            // Override top-level APIs so buttons apply morphs across ALL meshes
+            // (mannequin + clothing) when morph names match.
+            window.mannequinAPI.setMorphExclusive = function(morphName, categoryShapes) {
+                // For every mesh that has morph targets, set the category shapes
+                // to be exclusive (selected morph = 1, others = 0).
+                morphMeshes.forEach(mesh => {
+                    if (!mesh.morphTargetDictionary || !mesh.morphTargetInfluences) return;
+                    categoryShapes.forEach(key => {
+                        const idx = mesh.morphTargetDictionary[key];
+                        if (idx !== undefined) {
+                            try { mesh.morphTargetInfluences[idx] = (key === morphName) ? 1 : 0; } catch (e) { /* ignore */ }
+                        }
+                    });
+                });
+            };
+
+            window.mannequinAPI.setPose = function(morphName, poseShapes) {
+                // Apply pose shapes across all meshes that contain those morphs.
+                morphMeshes.forEach(mesh => {
+                    if (!mesh.morphTargetDictionary || !mesh.morphTargetInfluences) return;
+                    poseShapes.forEach(key => {
+                        const idx = mesh.morphTargetDictionary[key];
+                        if (idx !== undefined) {
+                            try { mesh.morphTargetInfluences[idx] = (key === morphName) ? 1 : 0; } catch (e) { /* ignore */ }
+                        }
+                    });
+                });
+            };
+
+            // Heuristic: clothing meshes are those with common clothing keywords in their name
+            const clothingMeshes = morphMeshes.filter(m => /shirt|jacket|coat|pants|skirt|jeans|top|garment|clothe/i.test(m.name) && !/mannequin|body|torso|head/i.test(m.name));
+
+            // Expose API to set morph by name (0..1 normalized influence)
+            window.mannequinAPI.setMorphByName = function(name, influence) {
+                if (!morphMap[name]) return;
+                const v = Math.max(0, Math.min(1, influence));
+                morphMap[name].forEach(entry => {
+                    try {
+                        entry.mesh.morphTargetInfluences[entry.index] = v;
+                    } catch (e) { /* ignore individual failures */ }
+                });
+            };
+
+            // Helper: set morph using real-world metric value and range (min/max)
+            window.mannequinAPI.setMorphByMetric = function(name, value, min, max) {
+                if (typeof value !== 'number' || typeof min !== 'number' || typeof max !== 'number') return;
+                const influence = (value - min) / (max - min);
+                window.mannequinAPI.setMorphByName(name, influence);
+            };
+
+            window.mannequinAPI.getAvailableMorphs = function() {
+                return Object.keys(morphMap);
+            };
+
+            window.mannequinAPI.listClothing = function() {
+                return clothingMeshes.map(m => m.name || '(unnamed)');
+            };
+
+            window.mannequinAPI.showClothing = function(meshName, show) {
+                morphMeshes.forEach(m => {
+                    if (m.name === meshName) m.visible = !!show;
+                });
+            };
 
             // Helper: convert morph name to slider id (lowercase, spaces/specials to dashes)
             function morphNameToId(name) {
@@ -296,16 +372,12 @@ function initViewer() {
             morphTargets.forEach((morphName) => {
                 const sliderId = morphNameToId(morphName);
                 const slider = document.getElementById(sliderId);
-                const valueDisplay = slider &&
-                    slider.parentElement.querySelector('.value-display');
-                const metricSelect = slider &&
-                    slider.parentElement.querySelector('.metric-select');
+                const valueDisplay = slider && slider.parentElement.querySelector('.value-display');
+                const metricSelect = slider && slider.parentElement.querySelector('.metric-select');
                 if (!slider || !valueDisplay || !metricSelect) return;
 
-                // Find mesh with this morph target
-                let mesh = morphMeshes.find(m =>
-                    m.morphTargetDictionary[morphName] !== undefined);
-                if (!mesh) return;
+                // If this morph name isn't present in any mesh, skip
+                if (!morphMap[morphName]) return;
 
                 // Helper: clamp and format
                 function clamp(val, min, max) {
@@ -321,17 +393,15 @@ function initViewer() {
                 }
                 function getMinMax() {
                     const metric = getMetric();
-                    const range = metricRanges[sliderId] ||
-                        { cm: [slider.min, slider.max], inch: [slider.min, slider.max] };
+                    const range = metricRanges[sliderId] || { cm: [slider.min, slider.max], inch: [slider.min, slider.max] };
                     return range[metric];
                 }
 
-                // Set morph target influence
+                // Set morph target influence across all meshes that have this morph name
                 function setMorph(val) {
                     const [min, max] = getMinMax();
                     const influence = (val - min) / (max - min);
-                    const idx = mesh.morphTargetDictionary[morphName];
-                    mesh.morphTargetInfluences[idx] = clamp(influence, 0, 1);
+                    window.mannequinAPI.setMorphByName(morphName, clamp(influence, 0, 1));
                 }
 
                 // Sync valueDisplay with slider (live update)

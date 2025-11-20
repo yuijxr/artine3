@@ -325,7 +325,7 @@ function get_short_agent($ua)
 
                         // actions
                         $actions_html = "";
-                        if (in_array($statusLower, ["pending", "paid"])) {
+                        if ($statusLower === 'pending') {
                             $actions_html .=
                                 '<button class="cancel-order-btn btn danger" data-id="' .
                                 intval($ord["order_id"]) .
@@ -448,19 +448,26 @@ function get_short_agent($ua)
                             <section id="panel-payments" class="settings-panel-content" style="display:none;">
                                 <div class="settings-panel-header">
                                     <h3>Payment Methods</h3>
-                                    <a href="#" id="settings-manage-payments" class="manage-link">Manage</a>
                                 </div>
-                                <p>Below are the payment methods available on Artine. Click a method to select it for quick checkout.</p>
+                                <p>Below are the payment methods available on Artine. Click a method to select it as default for quick checkout.</p>
                                 <div id="payments-list" style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px;">
                                     <?php
                                     // Render payment methods (available methods in the system) as pm-cards
+                                    // Respect user's default payment method if available
+                                    $user_default_pm = intval($user['default_payment_method_id'] ?? 0);
                                     $pmRes = $conn->query('SELECT method_id, name FROM payment_methods');
                                     if ($pmRes && $pmRes->num_rows > 0) {
                                         $first = true;
                                         while ($pm = $pmRes->fetch_assoc()) {
-                                            $cls = $first ? 'pm-card active' : 'pm-card';
+                                            $mid = intval($pm['method_id']);
+                                            // Determine active state: user's default if set, otherwise first
+                                            if ($user_default_pm > 0) {
+                                                $cls = ($mid === $user_default_pm) ? 'pm-card active' : 'pm-card';
+                                            } else {
+                                                $cls = $first ? 'pm-card active' : 'pm-card';
+                                            }
                                             $first = false;
-                                            echo '<div class="' . $cls . '" data-method-id="' . intval($pm['method_id']) . '">';
+                                            echo '<div class="' . $cls . '" data-method-id="' . $mid . '">';
                                             echo '<div class="pm-left"><div class="pm-info"><div class="pm-name">' . htmlspecialchars($pm['name']) . '</div></div></div>';
                                             echo '</div>';
                                         }
@@ -864,7 +871,6 @@ function get_short_agent($ua)
                                 <button type="button" class="bodyshape-btn" data-morph="Curvy Body">Curvy</button>
                                 <button type="button" class="bodyshape-btn" data-morph="Body (to Fat)">To Fat</button>
                                 <button type="button" class="bodyshape-btn" data-morph="Thin">Thin</button>
-                                <button type="button" class="bodyshape-btn" data-morph="Sitting">Sitting</button>
                             </div>
                             <div class="other-pref-section">
                                 <div class="other-pref-label">Pose</div>
@@ -872,6 +878,7 @@ function get_short_agent($ua)
                                 <button type="button" class="pose-btn" data-morph="'A' Pose">A Pose</button>
                                 <button type="button" class="pose-btn" data-morph="'Hi' Pose">Hi Pose</button>
                                 <button type="button" class="pose-btn" data-morph="'Peace' Pose">Peace Pose</button>
+                                <button type="button" class="pose-btn" data-morph="Sitting">Sitting</button>
                                 </div>
                             <div class="btn-row">
                                 <button id="save-preferences" class="btn primary save-mannequin">Save</button>

@@ -1,4 +1,169 @@
 /* ===== PRODUCT LISTINGS (index.php) ===== */
+.products-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
+
+.products-controls label {
+    font-weight: 600;
+    color: #374151;
+    font-size: 14px;
+}
+
+.products-controls select {
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid #e6edf8;
+    background: #ffffff;
+    color: #0f172a;
+    font-size: 14px;
+    min-width: 160px;
+    box-shadow: 0 2px 8px rgba(15,23,42,0.03);
+}
+
+/* Select wrapper with icon and trailing count */
+.select-with-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: #ffffff;
+    border: 1px solid #e6edf8;
+    border-radius: 10px;
+    padding: 5px;
+    box-shadow: 0 2px 8px rgba(15,23,42,0.03);
+}
+
+.select-with-icon .select-icon {
+    color: #64748b;
+    font-size: 16px;
+    width: 25px;
+    text-align: center;
+}
+
+.select-with-icon .select-control {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    padding: 5px 10px;
+    border-radius: 5px;
+    border: none;
+    background: transparent;
+    color: #0f172a;
+    font-size: 14px;
+    min-width: 120px;
+    box-shadow: none;
+    outline: none;
+}
+
+.select-with-icon .select-control:focus {
+    outline: none;
+}
+
+.select-count {
+    color: #64748b;
+    font-size: 14px;
+    margin-left: 10px;
+    padding-left: 10px;
+}
+
+.native-hidden { 
+    display: none !important; 
+}
+
+/* Custom select component */
+.select-custom {
+    position: relative;
+    display: inline-block;
+    min-width: 200px;
+    cursor: pointer;
+}
+
+.select-custom .select-display {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 5px;
+}
+
+/* New layout for display: left icon + label, spacer, right count + caret */
+.select-custom .select-display .left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.select-custom .select-display .spacer { 
+    flex: 1; 
+}
+
+.select-custom .filter-icon { 
+    font-size: 16px; 
+    color: #475569; 
+    width: 25px; 
+    text-align: center; 
+}
+
+.select-custom .right { 
+    display: flex; 
+    align-items: center; 
+    gap: 10px; 
+}
+
+.select-custom .select-count { 
+    color: #475569; 
+    font-weight: 600; 
+}
+
+.select-custom .select-caret { 
+    color: #475569; 
+}
+
+.select-custom .select-label {
+    color: #0f172a;
+    font-size: 14px;
+}
+
+.select-custom .select-list {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #e6edf8;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(15,23,42,0.08);
+    z-index: 2000;
+    display: none;
+    max-height: 300px;
+    overflow: auto;
+}
+
+.select-custom.open .select-list { 
+    display: block; 
+}
+
+.select-custom .select-option {
+    padding: 10px 20px;
+    font-size: 14px;
+    color: #0f172a;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.select-custom .select-option:hover { 
+    background: #f8fafc; 
+}
+
+.select-option .opt-count { 
+    color: #475569; 
+    margin-left: 10px; 
+}
+
 .products-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);

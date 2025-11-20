@@ -61,7 +61,7 @@ function send_verification_email($to_email, $to_name, $token) {
 
     $subject = 'Verify your Artine account';
     // Clean, mobile-friendly verification email with clear call to action
-    $html_body = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.4">'
+    $html_body = '<div style="font-family:Outfit,Helvetica,sans-serif;color:#111;line-height:1.4">'
         . '<div style="max-width:600px;margin:0 auto;padding:20px">'
         . '<div style="background:#ffffff;border-radius:8px;padding:24px;border:1px solid #eef2ff">'
         . '<h2 style="margin-top:0;color:#0b57d0">Verify your email address</h2>'
@@ -152,7 +152,7 @@ function create_and_send_verification_code($conn, $user_id, $to_email, $to_name,
             $subtext = 'Enter the code below to continue.';
         }
 
-        $html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;line-height:1.4">'
+        $html = '<div style="font-family:Outfit,Helvetica,sans-serif;color:#111;line-height:1.4">'
             . '<div style="max-width:600px;margin:0 auto;padding:20px">'
             . '<div style="background:#ffffff;border-radius:8px;padding:20px;border:1px solid #eef2ff;text-align:center">'
             . '<h2 style="margin:0 0 8px;color:#0b57d0">' . htmlspecialchars($subject) . '</h2>'

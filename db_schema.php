@@ -135,6 +135,21 @@ $statements = [
         `name` enum('COD','GCash','Credit Card') NOT NULL,
         PRIMARY KEY (`method_id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
+
+    "CREATE TABLE IF NOT EXISTS `payments` (
+        `payment_id` int(11) NOT NULL AUTO_INCREMENT,
+        `order_id` int(11) DEFAULT NULL,
+        `provider` varchar(100) NOT NULL,
+        `provider_source_id` varchar(255) DEFAULT NULL,
+        `token` varchar(64) DEFAULT NULL,
+        `amount` decimal(10,2) DEFAULT NULL,
+        `status` varchar(50) DEFAULT 'pending',
+        `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`payment_id`),
+        KEY `order_id` (`order_id`),
+        KEY `token` (`token`),
+        CONSTRAINT `payments_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
     
     "CREATE TABLE IF NOT EXISTS `products` (
         `product_id` int(11) NOT NULL AUTO_INCREMENT,
@@ -200,6 +215,8 @@ $statements = [
         `attempts` int(11) NOT NULL DEFAULT 0,
         `last_attempt` timestamp NULL DEFAULT NULL,
         `locked_until` timestamp NULL DEFAULT NULL,
+        `lock_count_24h` int(11) NOT NULL DEFAULT 0,
+        `last_lock` timestamp NULL DEFAULT NULL,
         PRIMARY KEY (`id`),
         UNIQUE KEY `ui_user_purpose` (`user_id`,`purpose`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
