@@ -11,18 +11,15 @@ const FACE_SHAPES = [
     'Heart Face Shape'
 ];
 const BODY_SHAPES = [
-    'Triangle Body',
-    'Straight Body',
-    'Curvy Body',
-    'Body (to Fat)',
-    'Thin'
+    'Triangle',
+    'Slim',
+    'Curvy'
 ];
 const POSE_SHAPES = [
     "'T' Pose",
     "'A' Pose",
-    "'Hi' Pose",
-    "'Peace' Pose",
-    'Sitting'
+    "'W' Pose",
+    "'U' Pose"
 ];
 
 // Utility: find a mesh that contains a given morph name
@@ -42,10 +39,14 @@ function findMeshWithMorph(morphName) {
 window.mannequinAPI = {
     setSkinTone(color) {
         if (!window.mannequin) return;
+        // Only apply skin tone to body/skin meshes, not clothing meshes
         window.mannequin.traverse(child => {
-            if (child.isMesh && child.material && child.material.color) {
-                child.material.color.set(color);
-            }
+            if (!child.isMesh || !child.material) return;
+            const name = (child.name || '').toLowerCase();
+            // skip common clothing keywords
+            if (/shirt|jacket|coat|pants|skirt|jean|jeans|top|garment|cap|hat|shoe|sock|sneaker/i.test(name)) return;
+            // apply color if material supports it
+            try { if (child.material && child.material.color) child.material.color.set(color); } catch (e) { /* ignore */ }
         });
     },
     setMorphExclusive(morphName, categoryShapes) {
@@ -149,7 +150,21 @@ function initViewer() {
 
     // === Scene & Camera ===
     const scene = new THREE.Scene();
+    // default background color while image loads
     scene.background = new THREE.Color(0xf2f2f2);
+    // load a background image (overrides color on success)
+    try {
+        const textureLoader = new THREE.TextureLoader();
+        const bgUrl = 'https://images.unsplash.com/photo-1503264116251-35a269479413?auto=format&fit=crop&w=1200&q=60';
+        textureLoader.load(bgUrl, (tex) => {
+            try { tex.encoding = THREE.sRGBEncoding; } catch (e) {}
+            scene.background = tex;
+        }, undefined, (err) => {
+            console.warn('mannequin viewer: background image failed to load', err);
+        });
+    } catch (e) {
+        console.warn('mannequin viewer: texture loader unavailable', e);
+    }
 
     const camera = new THREE.PerspectiveCamera(
         45,
@@ -241,7 +256,7 @@ function initViewer() {
     const loader = new GLTFLoader().setPath('./'); // same folder
     let mannequin;
     loader.load(
-        'mannequin10.glb',
+        'new4.glb',
         (gltf) => {
             mannequin = gltf.scene;
             window.mannequin = mannequin; // Make mannequin globally available for button logic
@@ -252,15 +267,19 @@ function initViewer() {
             const center = box.getCenter(new THREE.Vector3());
             mannequin.position.sub(center);
 
-            // ✅ Apply clean skin tone
+            // ✅ Apply clean skin tone to body meshes only (do not recolor clothing)
             mannequin.traverse((child) => {
-                if (child.isMesh) {
+                if (!child.isMesh) return;
+                const name = (child.name || '').toLowerCase();
+                // skip clothing meshes so shirts/pants keep their own materials
+                if (/shirt|jacket|coat|pants|skirt|jean|jeans|top|garment|cap|hat|shoe|sock|sneaker/i.test(name)) return;
+                try {
                     child.material = new THREE.MeshStandardMaterial({
                         color: '#FFDFC4',   // light skin tone
                         roughness: 0.6,     // softer look
                         metalness: 0.0,     // not metallic
                     });
-                }
+                } catch (e) { /* ignore */ }
             });
 
             // === Morph targets: sync by name across mannequin + clothing meshes ===
@@ -290,7 +309,7 @@ function initViewer() {
 
             // Override top-level APIs so buttons apply morphs across ALL meshes
             // (mannequin + clothing) when morph names match.
-            window.mannequinAPI.setMorphExclusive = function(morphName, categoryShapes) {
+            window.mannequinAPI.setMorphExclusive = function(morphName, categoryShapes, applyPreset) {
                 // For every mesh that has morph targets, set the category shapes
                 // to be exclusive (selected morph = 1, others = 0).
                 morphMeshes.forEach(mesh => {
@@ -302,6 +321,27 @@ function initViewer() {
                         }
                     });
                 });
+
+                // Reflect selection in the UI if body/face buttons exist, and
+                // apply any named presets (e.g. Triangle/Curvy) so sliders update
+                try {
+                    if (BODY_SHAPES.indexOf(morphName) !== -1) {
+                        document.querySelectorAll('.bodyshape-btn.active').forEach(b => b.classList.remove('active'));
+                        const bbtn = document.querySelector(`.bodyshape-btn[data-morph="${morphName}"]`);
+                        if (bbtn) bbtn.classList.add('active');
+                        // apply preset adjustments only when explicitly requested
+                        // (e.g. by a direct user click). applyPreset is truthy only
+                        // when the click handler passes it.
+                        if (applyPreset && (morphName === 'Triangle' || morphName === 'Curvy' || morphName === 'Slim')) {
+                            try { applyBodyShapePreset(morphName); } catch (e) { /* ignore */ }
+                        }
+                    }
+                    if (FACE_SHAPES.indexOf(morphName) !== -1) {
+                        document.querySelectorAll('.face-btn.active').forEach(b => b.classList.remove('active'));
+                        const fbtn = document.querySelector(`.face-btn[data-morph="${morphName}"]`);
+                        if (fbtn) fbtn.classList.add('active');
+                    }
+                } catch (e) { /* ignore UI sync failures */ }
             };
 
             window.mannequinAPI.setPose = function(morphName, poseShapes) {
@@ -331,6 +371,78 @@ function initViewer() {
                 });
             };
 
+            // Apply body-shape presets: when a body shape is selected, adjust measurement
+            // sliders to reflect a blended combination of morph influences.
+            function applyBodyShapePreset(shapeName) {
+                const presets = {
+                    'Triangle': {
+                        'Shoulders': 0.2,
+                        'Chest': 0.2,
+                        'Waist': 0.5,
+                        'Arms': 0.5,
+                        'Torso': 0.2
+                    },
+                    'Curvy': {
+                        'Shoulders': 0.2,
+                        'Chest': 0.3,
+                        'Waist': 0.5,
+                        'Arms': 0.5,
+                        'Torso': 0.2
+                    },
+                    'Slim': {
+                        'Shoulders': 0.1,
+                        'Chest': 0.1,
+                        'Waist': 0.1,
+                        'Arms': 0.1,
+                        'Torso': 0.1
+                    }
+                };
+                const coeffs = presets[shapeName];
+                if (!coeffs) return;
+
+                // For each morph target that has a slider, set the displayed measurement
+                morphTargets.forEach(morphName => {
+                    const sliderId = morphNameToId(morphName);
+                    const slider = document.getElementById(sliderId);
+                    const metricSelect = slider && slider.parentElement.querySelector('.metric-select');
+                    const valueDisplay = slider && slider.parentElement.querySelector('.value-display');
+                    if (!slider || !metricSelect || !valueDisplay) return;
+
+                    const metric = metricSelect.value;
+                    const range = metricRanges[sliderId] || { cm: [parseFloat(slider.min), parseFloat(slider.max)], inch: [parseFloat(slider.min), parseFloat(slider.max)] };
+                    const [min, max] = range[metric];
+
+                    const influence = (typeof coeffs[morphName] === 'number') ? coeffs[morphName] : null;
+                    if (influence === null) return;
+
+                    // Compute measurement from influence. For waist we invert measurement direction.
+                    let measurement;
+                    if (sliderId === 'waist') {
+                        measurement = max - influence * (max - min);
+                    } else {
+                        measurement = min + influence * (max - min);
+                    }
+                    // clamp
+                    measurement = Math.max(min, Math.min(max, measurement));
+
+                    // compute internal slider value (measurementToSlider logic)
+                    let internal = measurement;
+                    if (sliderId === 'waist') internal = (min + max) - measurement;
+
+                    // apply to DOM and update morph influence directly
+                    try {
+                        slider.value = internal;
+                        // format display based on metric precision
+                        const disp = (metric === 'cm') ? measurement.toFixed(2) : measurement.toFixed(1);
+                        valueDisplay.value = disp;
+                        // apply morph influence (use setMorphByName directly)
+                        if (window.mannequinAPI && typeof window.mannequinAPI.setMorphByName === 'function') {
+                            window.mannequinAPI.setMorphByName(morphName, influence);
+                        }
+                    } catch (e) { console.warn('applyBodyShapePreset failed for', morphName, e); }
+                });
+            }
+
             // Helper: set morph using real-world metric value and range (min/max)
             window.mannequinAPI.setMorphByMetric = function(name, value, min, max) {
                 if (typeof value !== 'number' || typeof min !== 'number' || typeof max !== 'number') return;
@@ -347,8 +459,26 @@ function initViewer() {
             };
 
             window.mannequinAPI.showClothing = function(meshName, show) {
+                // Toggle visibility for meshes matching the exact meshName
                 morphMeshes.forEach(m => {
+                    if (!m.name) return;
                     if (m.name === meshName) m.visible = !!show;
+                });
+            };
+
+            // Toggle visibility for clothing meshes by keyword (case-insensitive substring)
+            // e.g. keyword: 'shirt' | 'cap' | 'pants' | 'shoe'
+            window.mannequinAPI.showClothingByKeyword = function(keyword, show) {
+                if (!keyword) return;
+                const k = String(keyword).toLowerCase();
+                morphMeshes.forEach(m => {
+                    if (!m.name) return;
+                    const name = String(m.name).toLowerCase();
+                    // Only apply to meshes that look like clothing (skip mannequin/body parts)
+                    if (/mannequin|body|torso|head|skin|eye|teeth/i.test(name)) return;
+                    if (name.indexOf(k) !== -1) {
+                        try { m.visible = !!show; } catch (e) { /* ignore individual failures */ }
+                    }
                 });
             };
 
@@ -360,12 +490,14 @@ function initViewer() {
             }
 
             // Accurate min/max for each metric (real world)
+            // Keys match morphNameToId outputs for morph names: Shoulders->'shoulders', Arms->'arms', Torso->'torso'
             const metricRanges = {
-                'shoulder-width': { cm: [40, 55], inch: [15.748, 21.6535] },
-                'chest':         { cm: [80, 110], inch: [31.4961, 43.3071] },
-                'waist':         { cm: [70, 100], inch: [27.5591, 39.3701] },
-                'height':        { cm: [150, 200], inch: [59.0551, 78.7402] },
-                'torso-length':  { cm: [50, 80], inch: [19.685, 31.4961] }
+                'shoulders': { cm: [44.00, 55.00], inch: [17.32, 21.65] },
+                'chest':     { cm: [86.00, 120.00], inch: [33.86, 47.24] },
+                // waist is inverted: larger slider value -> smaller measurement
+                'waist':     { cm: [66.00, 100.00], inch: [25.98, 39.37] },
+                'arms':      { cm: [25.00, 35.00], inch: [9.84, 13.78] },
+                'torso':     { cm: [55.00, 70.00], inch: [21.65, 27.56] }
             };
 
             // For each morph target, set up slider/value-display/metric sync
@@ -384,31 +516,55 @@ function initViewer() {
                     return Math.max(min, Math.min(max, val));
                 }
                 function format(val) {
-                    return parseFloat(val).toFixed(2);
+                    const metric = getMetric();
+                    if (metric === 'cm') return parseFloat(val).toFixed(2);
+                    return parseFloat(val).toFixed(1);
                 }
 
                 // Get metric and min/max
-                function getMetric() {
-                    return metricSelect.value;
-                }
+                function getMetric() { return metricSelect.value; }
                 function getMinMax() {
                     const metric = getMetric();
-                    const range = metricRanges[sliderId] || { cm: [slider.min, slider.max], inch: [slider.min, slider.max] };
+                    const range = metricRanges[sliderId] || { cm: [parseFloat(slider.min), parseFloat(slider.max)], inch: [parseFloat(slider.min), parseFloat(slider.max)] };
                     return range[metric];
                 }
 
-                // Set morph target influence across all meshes that have this morph name
-                function setMorph(val) {
+                // Helpers to map between internal slider value and displayed measurement.
+                // For waist we invert the mapping so slider increase -> measurement decrease.
+                function sliderToMeasurement(internalVal) {
                     const [min, max] = getMinMax();
-                    const influence = (val - min) / (max - min);
+                    const v = parseFloat(internalVal);
+                    if (sliderId === 'waist') return (min + max) - v;
+                    return v;
+                }
+                function measurementToSlider(measurement) {
+                    const [min, max] = getMinMax();
+                    const v = parseFloat(measurement);
+                    if (sliderId === 'waist') return (min + max) - v;
+                    return v;
+                }
+
+                // Set morph target influence across all meshes that have this morph name
+                function setMorph(measurement) {
+                    const [min, max] = getMinMax();
+                    const val = parseFloat(measurement);
+                    let influence;
+                    // special-case waist: inverted mapping (slider up -> measurement down)
+                    if (sliderId === 'waist') {
+                        influence = (max - val) / (max - min);
+                    } else {
+                        influence = (val - min) / (max - min);
+                    }
                     window.mannequinAPI.setMorphByName(morphName, clamp(influence, 0, 1));
                 }
 
                 // Sync valueDisplay with slider (live update)
                 slider.addEventListener('input', () => {
-                    let val = format(slider.value);
-                    valueDisplay.value = val;
-                    setMorph(parseFloat(val));
+                    const internal = parseFloat(slider.value);
+                    const measured = sliderToMeasurement(internal);
+                    let disp = format(measured);
+                    valueDisplay.value = disp;
+                    setMorph(parseFloat(measured));
                 });
 
                 // Only allow numbers in valueDisplay, but don't update slider until blur
@@ -424,13 +580,16 @@ function initViewer() {
                     const [min, max] = getMinMax();
                     if (isNaN(num) || num < min || num > max) {
                         alert('Please enter a valid number between ' + min + ' and ' + max + '.');
-                        valueDisplay.value = format(slider.min);
-                        slider.value = format(slider.min);
-                        setMorph(parseFloat(slider.min));
+                        const fallback = parseFloat(slider.min);
+                        const sliderInternal = measurementToSlider(fallback);
+                        valueDisplay.value = format(fallback);
+                        slider.value = sliderInternal;
+                        setMorph(fallback);
                     } else {
                         num = clamp(num, min, max);
                         valueDisplay.value = format(num);
-                        slider.value = format(num);
+                        // set internal slider value (invert for waist)
+                        slider.value = measurementToSlider(num);
                         setMorph(num);
                     }
                 }
@@ -443,34 +602,62 @@ function initViewer() {
 
                 // Metric change: update min/max/value
                 metricSelect.addEventListener('change', () => {
-                    const metric = getMetric();
+                    const newMetric = getMetric();
                     const [min, max] = getMinMax();
+                    // set slider min/max to measurement range
                     slider.min = min;
                     slider.max = max;
-                    slider.step = metric === 'cm' ? 0.5 : 0.01;
-                    // Convert value
-                    let val = parseFloat(slider.value);
-                    if (metric === 'cm') {
-                        // Convert inch to cm
-                        val = Math.round(val * 2.54 * 100) / 100;
+                    slider.step = newMetric === 'cm' ? 0.01 : 0.1;
+
+                    // Read current measurement from internal slider value
+                    const currentInternal = parseFloat(slider.value);
+                    const currentMeasurement = sliderToMeasurement(currentInternal);
+
+                    // Convert currentMeasurement to the newly selected metric
+                    let converted = currentMeasurement;
+                    if (newMetric === 'cm') {
+                        // convert inches -> cm
+                        converted = currentMeasurement * 2.54;
+                        converted = Math.round(converted * 100) / 100;
                     } else {
-                        // Convert cm to inch
-                        val = Math.round(val / 2.54 * 100) / 100;
+                        // convert cm -> inches
+                        converted = currentMeasurement / 2.54;
+                        converted = Math.round(converted * 10) / 10;
                     }
-                    // Clamp and update
-                    val = clamp(val, min, max);
-                    slider.value = format(val);
-                    valueDisplay.value = format(val);
-                    setMorph(val);
+
+                    // Clamp to new range
+                    converted = clamp(converted, min, max);
+
+                    // Update internal slider and displayed value without resetting to 0
+                    slider.value = measurementToSlider(converted);
+                    valueDisplay.value = format(converted);
+                    setMorph(converted);
                 });
 
-                // Initialize valueDisplay and morph
-                valueDisplay.value = format(slider.value);
-                setMorph(parseFloat(slider.value));
+                // Initialize valueDisplay and morph (respect waist inversion)
+                const initialInternal = parseFloat(slider.value);
+                const initialMeasurement = sliderToMeasurement(initialInternal);
+                valueDisplay.value = format(initialMeasurement);
+                setMorph(parseFloat(initialMeasurement));
             });
 
             // Wire up morph/skin buttons now mannequin is loaded
             if (window._wireMorphButtons) window._wireMorphButtons();
+            // Ensure body-shape buttons apply presets only when clicked by the user.
+            // Replace their handlers so they pass an explicit "applyPreset" flag
+            // to `setMorphExclusive` (third argument). This prevents programmatic
+            // calls (saved shapes) from forcing preset slider changes.
+            try {
+                document.querySelectorAll('.bodyshape-btn').forEach(btn => {
+                    const morph = btn.getAttribute && btn.getAttribute('data-morph');
+                    if (!morph) return;
+                    btn.onclick = () => {
+                        if (window.mannequinAPI && typeof window.mannequinAPI.setMorphExclusive === 'function') {
+                            window.mannequinAPI.setMorphExclusive(morph, BODY_SHAPES, true);
+                        }
+                    };
+                });
+            } catch (e) { /* ignore if DOM not present */ }
 
             // Listen for external control events (dispatched by account tab script)
             window.addEventListener('mannequin.skin', (ev) => {
@@ -483,12 +670,31 @@ function initViewer() {
             });
             window.addEventListener('mannequin.shape', (ev) => {
                 const morph = ev && ev.detail && ev.detail.morph;
-                if (morph) window.mannequinAPI.setMorphExclusive(morph, BODY_SHAPES);
+                if (!morph) return;
+                // apply the morph across meshes
+                // Do NOT auto-apply presets here. Saved/programmatic shape application
+                // should set morphs only; presets (slider adjustments) are applied only
+                // when the user explicitly clicks a body-shape button.
+                window.mannequinAPI.setMorphExclusive(morph, BODY_SHAPES);
             });
             window.addEventListener('mannequin.pose', (ev) => {
                 const morph = ev && ev.detail && ev.detail.morph;
                 if (morph) window.mannequinAPI.setPose(morph, POSE_SHAPES);
             });
+
+            // Make default pose and body shape active: 'A' pose and 'Thin' (slim)
+            try {
+                // default pose
+                if (window.mannequinAPI && typeof window.mannequinAPI.setPose === 'function') {
+                    window.mannequinAPI.setPose("'A' Pose", POSE_SHAPES);
+                    // reflect UI active state if buttons exist
+                    const pbtn = document.querySelector(`.pose-btn[data-morph="'A' Pose"]`);
+                    if (pbtn) { document.querySelectorAll('.pose-btn.active').forEach(b=>b.classList.remove('active')); pbtn.classList.add('active'); }
+                }
+                // NOTE: no default body shape is enforced here. Saved body shape (if any)
+                // will be applied by calling code (e.g. product.js) which uses
+                // `window.mannequinAPI.setMorphExclusive(saved.body_shape, [...])`.
+            } catch (e) { /* ignore */ }
 
             console.log('✅ Mannequin loaded');
             try {

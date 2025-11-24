@@ -1,0 +1,37 @@
+{
+  "XS": {
+    "shoulders": 44.00,
+    "chest": 86.00,
+    "waist": 66.00,
+    "arms": 25.00,
+    "torso": 55.00
+  },
+  "S": {
+    "shoulders": 46.75,
+    "chest": 94.50,
+    "waist": 74.50,
+    "arms": 27.50,
+    "torso": 58.75
+  },
+  "M": {
+    "shoulders": 49.50,
+    "chest": 103.00,
+    "waist": 83.00,
+    "arms": 30.00,
+    "torso": 62.50
+  },
+  "L": {
+    "shoulders": 52.25,
+    "chest": 111.50,
+    "waist": 91.50,
+    "arms": 32.50,
+    "torso": 66.25
+  },
+  "XL": {
+    "shoulders": 55.00,
+    "chest": 120.00,
+    "waist": 100.00,
+    "arms": 35.00,
+    "torso": 70.00
+  }
+}

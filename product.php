@@ -50,6 +50,7 @@ $sizes = ['S', 'M', 'L', 'XL'];
 
                         // Read thumbnails from DB (thumbnail_images JSON) only.
                         // If DB doesn't have valid entries, fall back to using the product main image.
+        
                         $thumbs = [];
                         if (!empty($product['thumbnail_images'])) {
                             $decoded = json_decode($product['thumbnail_images'], true);
@@ -108,6 +109,13 @@ $sizes = ['S', 'M', 'L', 'XL'];
                 </div>
                 <div class="product-main-image">
                     <img src="<?php echo htmlspecialchars($imgPath); ?>" alt="<?php echo htmlspecialchars($product['name']); ?>" id="mainProductImage">
+                    <!-- Mannequin clothing toggle buttons (positioned top-right of the canvas) -->
+                    <div class="mannequin-clothing-toggle" id="mannequinClothingToggle" aria-hidden="true">
+                        <button class="mannequin-toggle-btn active" data-key="cap" title="Caps / Hats" data-visible="1"><i class="fa fa-hat-cowboy icon" aria-hidden="true"></i></button>
+                        <button class="mannequin-toggle-btn active" data-key="shirt" title="Shirts / Tops" data-visible="1"><i class="fa fa-tshirt icon" aria-hidden="true"></i></button>
+                        <button class="mannequin-toggle-btn active" data-key="pants" title="Pants / Jeans" data-visible="1"><i class="fa fa-socks icon" aria-hidden="true"></i></button>
+                        <button class="mannequin-toggle-btn active" data-key="shoe" title="Shoes" data-visible="1"><i class="fa fa-shoe-prints icon" aria-hidden="true"></i></button>
+                    </div>
                 </div>
             </div>
 
@@ -150,6 +158,9 @@ $sizes = ['S', 'M', 'L', 'XL'];
                             <?php endif; ?>
                         </div>
                     </div>
+
+                    <!-- Recommended size placeholder (populated from saved measurements) -->
+                    <div style="margin-top:12px; margin-bottom:8px; font-size:14px;">Recommended size: <strong><span id="sizeRecommendation">—</span></strong></div>
 
                     <div class="product-quantity">
                         <div class="cart-item-quantity">
@@ -207,6 +218,42 @@ $sizes = ['S', 'M', 'L', 'XL'];
     <script>const PRODUCT = <?php echo json_encode($product); ?>;</script>
     <script src="assets/js/index.js"></script>
     <script src="assets/js/product.js"></script>
+    <!-- SizeManager integration: load script and initialize on product page -->
+    <script src="assets/js/size-manager.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function(){
+        if (!window.SizeManager) return;
+        // initialize size manager and then fetch saved measurements (server API) to recommend a size
+        SizeManager.init({ url: 'assets/js/sizes.json' }).then(function(){
+            // If user is logged in, fetch saved mannequin measurements from API
+            try{
+                if (typeof IS_LOGGED !== 'undefined' && IS_LOGGED) {
+                    fetch('api/get_mannequin.php', { cache: 'no-store' })
+                    .then(function(resp){ if (!resp.ok) return null; return resp.json(); })
+                    .then(function(saved){
+                        if (!saved) return;
+                        // map saved keys (server) to size-manager expected keys (cm)
+                        const user = {
+                            shoulders: (saved.shoulder_width || saved.shoulders || 0),
+                            chest:     (saved.chest_bust || saved.chest || 0),
+                            waist:     (saved.waist || 0),
+                            arms:      (saved.arm_length || saved.arms || 0),
+                            torso:     (saved.torso_length || saved.torso || 0)
+                        };
+                        try{
+                            const rec = SizeManager.recommendSize(user);
+                            var out = document.getElementById('sizeRecommendation');
+                            if (out) out.textContent = (rec && rec.size) ? rec.size : '—';
+                            if (rec && rec.size) SizeManager.selectSize(rec.size);
+                        }catch(e){ console.warn('SizeManager recommend error', e); }
+                    }).catch(function(e){ console.warn('Failed to fetch saved mannequin', e); });
+                } else {
+                    // not logged in: leave recommendation blank or use other logic later
+                }
+            }catch(e){ console.warn('SizeManager init flow error', e); }
+        }).catch(function(e){ console.warn('SizeManager failed to init', e); });
+    });
+    </script>
     <!-- Module shims & import map for three.js used by mannequin viewer -->
     <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
     <script type="importmap"> {
@@ -215,5 +262,56 @@ $sizes = ['S', 'M', 'L', 'XL'];
             "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
         }
     } </script>
+    <script>
+    (function(){
+        // Wire the floating clothing toggles to the mannequin API (graceful if viewer not yet loaded)
+        const container = document.getElementById('mannequinClothingToggle');
+        if (!container) return;
+
+        const mapping = {
+            cap: ['cap', 'hat', 'beanie'],
+            shirt: ['shirt', 'jacket', 'coat', 'top', 'tshirt'],
+            pants: ['pant', 'jean', 'trouser', 'leggings', 'shorts'],
+            shoe: ['shoe', 'sneaker', 'foot', 'sole', 'boot']
+        };
+
+        function applyVisibility(key, visible){
+            // call the viewer API if available, otherwise queue until ready
+            const kws = mapping[key] || [key];
+            function doApply(){
+                try{
+                    if (window.mannequinAPI && typeof window.mannequinAPI.showClothingByKeyword === 'function'){
+                        kws.forEach(k => window.mannequinAPI.showClothingByKeyword(k, visible));
+                    } else if (window.mannequinAPI && typeof window.mannequinAPI.listClothing === 'function'){
+                        // Fallback: try toggling by exact mesh names that include the keyword
+                        const list = (window.mannequinAPI.listClothing && window.mannequinAPI.listClothing()) || [];
+                        list.forEach(name => {
+                            const nm = (name||'').toLowerCase();
+                            kws.forEach(k => { if (nm.indexOf(k) !== -1){ try{ window.mannequinAPI.showClothing(name, visible); }catch(e){} } });
+                        });
+                    }
+                }catch(e){ console.warn('applyVisibility error', e); }
+            }
+
+            if (window.mannequin && window.mannequinAPI) doApply();
+            else {
+                window.addEventListener('mannequin.ready', function once(){ doApply(); window.removeEventListener('mannequin.ready', once); });
+            }
+        }
+
+        container.querySelectorAll('.mannequin-toggle-btn').forEach(btn => {
+            btn.addEventListener('click', ()=>{
+                const key = btn.getAttribute('data-key');
+                const vis = btn.getAttribute('data-visible') === '1';
+                const newVis = !vis;
+                btn.setAttribute('data-visible', newVis ? '1' : '0');
+                btn.classList.toggle('active', newVis);
+                // reflect active state for accessibility
+                try{ btn.setAttribute('aria-pressed', newVis ? 'true' : 'false'); }catch(e){}
+                applyVisibility(key, newVis);
+            });
+        });
+    })();
+    </script>
 </body>
 </html>

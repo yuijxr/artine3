@@ -790,7 +790,7 @@ function get_short_agent($ua)
                             <div class="slider-row">
                                 <label for="shoulders" class="label">Shoulder width</label>
                                 <div class="slider-group">
-                                    <input type="range" id="shoulders" min="40" max="55" value="48" step="0.5" class="slider">
+                                    <input type="range" id="shoulders" min="44" max="55" value="48" step="0.1" class="slider">
                                     <input type="text" class="value-display" value="48">
                                     <select class="metric-select">
                                         <option value="cm" selected>cm</option>
@@ -801,7 +801,7 @@ function get_short_agent($ua)
                             <div class="slider-row">
                                 <label for="chest" class="label">Chest/Bust</label>
                                 <div class="slider-group">
-                                    <input type="range" id="chest" min="80" max="110" value="94" step="0.5" class="slider">
+                                    <input type="range" id="chest" min="86" max="120" value="94" step="0.1" class="slider">
                                     <input type="text" class="value-display" value="94">
                                     <select class="metric-select">
                                         <option value="cm" selected>cm</option>
@@ -812,7 +812,7 @@ function get_short_agent($ua)
                             <div class="slider-row">
                                 <label for="waist" class="label">Waist</label>
                                 <div class="slider-group">
-                                    <input type="range" id="waist" min="70" max="100" value="84" step="0.5" class="slider">
+                                    <input type="range" id="waist" min="66" max="100" value="84" step="0.1" class="slider">
                                     <input type="text" class="value-display" value="84">
                                     <select class="metric-select">
                                         <option value="cm" selected>cm</option>
@@ -823,18 +823,18 @@ function get_short_agent($ua)
                             <div class="slider-row">
                                 <label for="arms" class="label">Arms</label>
                                 <div class="slider-group">
-                                    <input type="range" id="arms" min="150" max="200" value="175" step="0.5" class="slider">
-                                    <input type="text" class="value-display" value="175">
+                                    <input type="range" id="arms" min="25" max="35" value="25" step="0.1" class="slider">
+                                    <input type="text" class="value-display" value="25">
                                     <select class="metric-select">
                                         <option value="cm" selected>cm</option>
                                         <option value="inch">inch</option>
                                     </select>
                                 </div>
-                            </div>
+                            </div>  
                             <div class="slider-row">
                                 <label for="torso" class="label">Torso length</label>
                                 <div class="slider-group">
-                                    <input type="range" id="torso" min="50" max="80" value="64" step="0.5" class="slider">
+                                    <input type="range" id="torso" min="56" max="70" value="64" step="0.1" class="slider">
                                     <input type="text" class="value-display" value="64">
                                     <select class="metric-select">
                                         <option value="cm" selected>cm</option>
@@ -866,19 +866,16 @@ function get_short_agent($ua)
                             </div>
                             <div class="other-pref-section">
                                 <div class="other-pref-label">Body Shape</div>
-                                <button type="button" class="bodyshape-btn" data-morph="Triangle Body">Triangle</button>
-                                <button type="button" class="bodyshape-btn active" data-morph="Straight Body">Straight</button>
-                                <button type="button" class="bodyshape-btn" data-morph="Curvy Body">Curvy</button>
-                                <button type="button" class="bodyshape-btn" data-morph="Body (to Fat)">To Fat</button>
-                                <button type="button" class="bodyshape-btn" data-morph="Thin">Thin</button>
+                                <button type="button" class="bodyshape-btn" data-morph="Triangle">Triangle</button>
+                                <button type="button" class="bodyshape-btn active" data-morph="Slim">Slim</button>
+                                <button type="button" class="bodyshape-btn" data-morph="Curvy">Curvy</button>
                             </div>
                             <div class="other-pref-section">
                                 <div class="other-pref-label">Pose</div>
                                 <button type="button" class="pose-btn" data-morph="'T' Pose">T Pose</button>
                                 <button type="button" class="pose-btn" data-morph="'A' Pose">A Pose</button>
-                                <button type="button" class="pose-btn" data-morph="'Hi' Pose">Hi Pose</button>
-                                <button type="button" class="pose-btn" data-morph="'Peace' Pose">Peace Pose</button>
-                                <button type="button" class="pose-btn" data-morph="Sitting">Sitting</button>
+                                <button type="button" class="pose-btn" data-morph="'W' Pose">W Pose</button>
+                                <button type="button" class="pose-btn" data-morph="'U' Pose">U Pose</button>
                                 </div>
                             <div class="btn-row">
                                 <button id="save-preferences" class="btn primary save-mannequin">Save</button>

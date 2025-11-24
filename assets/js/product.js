@@ -202,6 +202,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
                 // hide viewer, show original image
                 try{ container.style.display = 'none'; }catch(e){}
                 try{ if (mainImg) mainImg.style.display = ''; }catch(e){}
+                // hide clothing toggle
+                try{ const toggle = document.getElementById('mannequinClothingToggle'); if (toggle){ toggle.style.display = 'none'; toggle.setAttribute('aria-hidden','true'); } }catch(e){}
                 tryBtn.disabled = false; tryBtn.textContent = 'Try on Wardrobe';
                 return;
             }
@@ -225,6 +227,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
             await ensureViewerLoaded(container);
             // show container
             container.style.display = '';
+            // show clothing toggle (positioned relative to product image)
+            try{ const toggle = document.getElementById('mannequinClothingToggle'); if (toggle){ toggle.style.display = 'flex'; toggle.setAttribute('aria-hidden','false'); } }catch(e){}
 
             // fetch saved mannequin (server for logged users, localStorage for guests)
             let saved = null;
@@ -238,12 +242,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
                         // restore UI
                         if (mainImg) mainImg.style.display = '';
                         if (container) container.style.display = 'none';
+                        try{ const toggle = document.getElementById('mannequinClothingToggle'); if (toggle){ toggle.style.display = 'none'; toggle.setAttribute('aria-hidden','true'); } }catch(e){}
                         tryBtn.disabled = false; tryBtn.textContent = 'Try on Wardrobe';
                         return;
                     }
                 } else {
-                    const s = localStorage.getItem('savedMannequin');
-                    if (s) saved = JSON.parse(s);
+                    // Guests must log in to use the saved mannequin feature
+                    saved = null;
                 }
             }catch(e){ console.warn('Failed to load saved mannequin', e); }
 
