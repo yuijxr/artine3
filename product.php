@@ -111,9 +111,9 @@ $sizes = ['S', 'M', 'L', 'XL'];
                     <img src="<?php echo htmlspecialchars($imgPath); ?>" alt="<?php echo htmlspecialchars($product['name']); ?>" id="mainProductImage">
                     <!-- Mannequin clothing toggle buttons (positioned top-right of the canvas) -->
                     <div class="mannequin-clothing-toggle" id="mannequinClothingToggle" aria-hidden="true">
-                        <button class="mannequin-toggle-btn active" data-key="cap" title="Caps / Hats" data-visible="1"><i class="fa fa-hat-cowboy icon" aria-hidden="true"></i></button>
-                        <button class="mannequin-toggle-btn active" data-key="shirt" title="Shirts / Tops" data-visible="1"><i class="fa fa-tshirt icon" aria-hidden="true"></i></button>
-                        <button class="mannequin-toggle-btn active" data-key="pants" title="Pants / Jeans" data-visible="1"><i class="fa fa-socks icon" aria-hidden="true"></i></button>
+                        <button class="mannequin-toggle-btn active" data-key="cap" title="Caps" data-visible="1"><i class="fa fa-hat-cowboy icon" aria-hidden="true"></i></button>
+                        <button class="mannequin-toggle-btn active" data-key="shirt" title="Shirts" data-visible="1"><i class="fa fa-tshirt icon" aria-hidden="true"></i></button>
+                        <button class="mannequin-toggle-btn active" data-key="pants" title="Pants" data-visible="1"><i class="fa fa-socks icon" aria-hidden="true"></i></button>
                         <button class="mannequin-toggle-btn active" data-key="shoe" title="Shoes" data-visible="1"><i class="fa fa-shoe-prints icon" aria-hidden="true"></i></button>
                     </div>
                 </div>
@@ -162,15 +162,20 @@ $sizes = ['S', 'M', 'L', 'XL'];
                     <!-- Recommended size placeholder (populated from saved measurements) -->
                     <div style="margin-top:12px; margin-bottom:8px; font-size:14px;">Recommended size: <strong><span id="sizeRecommendation">—</span></strong></div>
 
-                    <div class="product-quantity">
-                        <div class="cart-item-quantity">
+                    <div class="product-quantity" style="display:flex;align-items:center;gap:12px;">
+                            <div class="cart-item-quantity">
                             <button class="quantity-btn qty-decrease" type="button">-</button>
-                            <input type="number" id="qty" value="1" min="1" class="quantity-input" />
+                            <input type="number" id="qty" value="1" min="1" max="<?php echo intval($product['stock']); ?>" class="quantity-input" />
                             <button class="quantity-btn qty-increase" type="button">+</button>
                         </div>
+                        <div class="product-stock-inline">In stock: <strong><?php echo intval($product['stock']); ?></strong></div>
                     </div>
                     <div class="product-actions">
-                        <button class="big-btn btn primary wide" style="flex: 2;" id="add-to-cart">Add to cart</button>
+                        <?php if (intval($product['stock']) <= 0): ?>
+                            <button class="big-btn btn primary wide" style="flex: 2;" id="add-to-cart" disabled>Out of stock</button>
+                        <?php else: ?>
+                            <button class="big-btn btn primary wide" style="flex: 2;" id="add-to-cart">Add to cart</button>
+                        <?php endif; ?>
                         <button class="big-btn btn" style="flex: 1;" id="try-mannequin">Try on Wardrobe</button>
                     </div>
                 </div>
@@ -280,6 +285,21 @@ $sizes = ['S', 'M', 'L', 'XL'];
             const kws = mapping[key] || [key];
             function doApply(){
                 try{
+                    // Special-case certain keys to map to exact mesh names
+                    if (window.mannequinAPI && typeof window.mannequinAPI.showClothing === 'function'){
+                            if (key === 'shoe'){
+                                // shoes have two meshes: "Shoes1" and "Shoe2"
+                                try{ window.mannequinAPI.showClothing('Shoes1', visible); }catch(e){}
+                                try{ window.mannequinAPI.showClothing('Shoe2', visible); }catch(e){}
+                            }
+                            if (key === 'pants'){
+                                try{ window.mannequinAPI.showClothing('Pants', visible); }catch(e){}
+                            }
+                            if (key === 'cap'){
+                                try{ window.mannequinAPI.showClothing('Caps', visible); }catch(e){}
+                            }
+                    }
+
                     if (window.mannequinAPI && typeof window.mannequinAPI.showClothingByKeyword === 'function'){
                         kws.forEach(k => window.mannequinAPI.showClothingByKeyword(k, visible));
                     } else if (window.mannequinAPI && typeof window.mannequinAPI.listClothing === 'function'){

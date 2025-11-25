@@ -39,7 +39,15 @@ document.addEventListener('DOMContentLoaded', ()=>{
         // size may be a select or a hidden input updated by clicking a .size-option
         const sizeEl = document.getElementById('size-select');
         const size = sizeEl ? sizeEl.value : '';
-        const qty = Math.max(1, parseInt(qtyEl.value||1));
+        let qty = Math.max(1, parseInt(qtyEl.value||1));
+        // Respect product stock (client-side clamp)
+        const maxStock = parseInt(qtyEl.getAttribute('max') || (typeof PRODUCT !== 'undefined' && PRODUCT.stock ? PRODUCT.stock : Infinity));
+        if (qty > maxStock) {
+            qty = Math.max(1, maxStock);
+            qtyEl.value = qty;
+            const msg = `Only ${maxStock} in stock.`;
+            if (typeof showNotification === 'function') showNotification(msg, 'error'); else alert(msg);
+        }
 
         // Ensure guest cart stores a full image path using shared helper
     const imagePath = (window.AppUtils && window.AppUtils.resolveImagePath) ? window.AppUtils.resolveImagePath(PRODUCT.image_url || PRODUCT.image || 'no-image.png', PRODUCT.category_name) : (PRODUCT.image_url || PRODUCT.image || 'uploads/product_img/no-image.png');
@@ -126,15 +134,15 @@ document.addEventListener('DOMContentLoaded', ()=>{
         const tryBtn = document.getElementById('try-mannequin');
         if (!tryBtn) return;
 
-        // metric ranges must match those used by the mannequin viewer
+        // Use the same metric ranges as the mannequin viewer so influences
+        // computed from real measurements are identical across account/product.
         const metricRanges = {
-            'shoulder-width': { cm: [40, 55] },
-            'chest':         { cm: [80, 110] },
-            'waist':         { cm: [70, 100] },
-            'torso-length':  { cm: [50, 80] },
-            'height':        { cm: [150, 200] },
-            // alias for arms (viewer uses 'height' range for arm-length slider in account UI)
-            'arms':          { cm: [150, 200] }
+            'shoulder-width': { cm: [44.00, 55.00] },
+            'chest':          { cm: [86.00, 120.00] },
+            'waist':          { cm: [66.00, 100.00] },
+            'torso-length':   { cm: [55.00, 70.00] },
+            // arms is a limb length metric in the viewer (not height)
+            'arms':           { cm: [25.00, 35.00] }
         };
 
         function morphNameToId(name){
@@ -217,6 +225,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
                 container.style.width = '100%';
                 container.style.height = '100%';
                 container.style.display = 'none';
+                // expose product context to the viewer via data attributes
+                try{
+                    if (typeof PRODUCT !== 'undefined' && PRODUCT) {
+                        if (PRODUCT.category_name) container.dataset.productCategory = PRODUCT.category_name;
+                        if (PRODUCT.product_id) container.dataset.productId = String(PRODUCT.product_id);
+                    }
+                }catch(e){}
                 mainWrap.appendChild(container);
             }
 
@@ -264,9 +279,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
                     if (saved.face_shape && window.mannequinAPI && typeof window.mannequinAPI.setMorphExclusive === 'function'){
                         try{ window.mannequinAPI.setMorphExclusive(saved.face_shape, [saved.face_shape]); }catch(e){}
                     }
-                    if (saved.body_shape && window.mannequinAPI && typeof window.mannequinAPI.setMorphExclusive === 'function'){
-                        try{ window.mannequinAPI.setMorphExclusive(saved.body_shape, [saved.body_shape]); }catch(e){}
-                    }
 
                     // measurements -> morphs mapping
                     const mapping = {
@@ -289,8 +301,17 @@ document.addEventListener('DOMContentLoaded', ()=>{
                         const range = metricRanges[metricKey];
                         if (range && typeof v === 'number'){
                             const min = range.cm[0]; const max = range.cm[1];
-                            const influence = (v - min) / (max - min);
-                            setMorphInfluence(morphName, influence);
+                            // Prefer to use the viewer API so behavior matches account page
+                            // and clothing/body morph influences remain consistent.
+                            try {
+                                if (window.mannequinAPI && typeof window.mannequinAPI.setMorphByMetric === 'function') {
+                                    window.mannequinAPI.setMorphByMetric(morphName, Number(v), min, max);
+                                } else {
+                                    // fallback: set raw influence across meshes
+                                    const influence = (v - min) / (max - min);
+                                    setMorphInfluence(morphName, influence);
+                                }
+                            } catch (e) { console.warn('apply saved morph via API failed', e); }
                         }
                     });
                 }
@@ -342,8 +363,31 @@ document.addEventListener('DOMContentLoaded', ()=>{
         const inc = document.querySelector('.qty-increase');
         const qty = document.getElementById('qty');
         if (!qty) return;
+
+        function getMaxStock(){
+            return parseInt(qty.getAttribute('max') || (typeof PRODUCT !== 'undefined' && PRODUCT.stock ? PRODUCT.stock : Infinity));
+        }
+
+        function notifyOverMax(max){
+            const msg = `Requested quantity exceeds available stock. Maximum available: ${max}.`;
+            if (typeof showNotification === 'function') showNotification(msg, 'error'); else alert(msg);
+        }
+
+        // clamp on manual change
+        qty.addEventListener('change', ()=>{
+            const max = getMaxStock();
+            let v = Math.max(1, parseInt(qty.value||1));
+            if (v > max) { v = max; qty.value = v; notifyOverMax(max); }
+        });
+
         if (dec) dec.addEventListener('click', ()=>{ qty.value = Math.max(1, (parseInt(qty.value||1) - 1)); qty.dispatchEvent(new Event('change')); });
-        if (inc) inc.addEventListener('click', ()=>{ qty.value = Math.max(1, (parseInt(qty.value||1) + 1)); qty.dispatchEvent(new Event('change')); });
+        if (inc) inc.addEventListener('click', ()=>{
+            const max = getMaxStock();
+            const current = Math.max(1, parseInt(qty.value||1));
+            if (current >= max) { notifyOverMax(max); return; }
+            qty.value = Math.min(max, current + 1);
+            qty.dispatchEvent(new Event('change'));
+        });
     })();
 
     // --- Smooth accordion behavior ----------------------------------

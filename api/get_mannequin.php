@@ -27,7 +27,7 @@ if ($vstmt) {
 $user_id = intval($_SESSION['user_id']);
 
 // Read measurement fields from users table (merged schema)
-$stmt = $conn->prepare('SELECT shoulder_width, chest_bust, waist, torso_length, arm_length, body_shape, face_shape, skin_tone, base_model_url FROM users WHERE user_id = ? LIMIT 1');
+$stmt = $conn->prepare('SELECT shoulder_width, chest_bust, waist, torso_length, arm_length, face_shape, skin_tone, base_model_url FROM users WHERE user_id = ? LIMIT 1');
 if (!$stmt) { echo json_encode(null); exit; }
 $stmt->bind_param('i', $user_id);
 $stmt->execute();

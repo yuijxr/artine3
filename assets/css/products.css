@@ -136,7 +136,7 @@
     border: 1px solid #e6edf8;
     border-radius: 10px;
     box-shadow: 0 8px 24px rgba(15,23,42,0.08);
-    z-index: 2000;
+    z-index: 999;
     display: none;
     max-height: 300px;
     overflow: auto;

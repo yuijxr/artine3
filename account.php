@@ -780,12 +780,51 @@ function get_short_agent($ua)
                  buttonioa href="/artine3/auth/verify.php" target="_blaVerifyorar">buttonbutton class="btn">Resend verification</button></a>
                     </div>
                 <?php else: ?>
-                <div class="mannequin-controls">
-                    <div class="mannequin-tabs">
-                        <a href="#" class="tab body-measurement active" id="bodyTabBtn">Body Measurements</a>
-                        <a href="#" class="tab other-pref" id="otherPrefBtn">Skin, Face, Body Shape</a>
-                    </div>
-                    <div id="bodyTab" style="display:none;">
+                    <div class="mannequin-controls">
+                        <div class="mannequin-tabs">
+                            <div class="tab body-measurement active" id="bodyTabLabel" style="width:100%;">Body Measurements</div>
+                        </div>
+                        <div id="bodyTab" style="display:block;">
+                        <!-- Combined preferences (Skin tone | Face Shape) and Body Shape helper -->
+                        <div class="combined-prefs" style="margin-bottom:12px; display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap;">
+                            <div style="flex:1 1 220px;">
+                                <div class="other-pref-label">Skin tone</div>
+                                <div style="display:flex; gap:8px; margin-top:6px; align-items:center;">
+                                    <!-- Color wheel first -->
+                                    <div id="account-skin-wheel-wrapper" class="mannequin-toggle-btn" style="display:inline-flex;align-items:center;justify-content:center;padding:6px;">
+                                        <input id="account-skin-wheel" type="color" value="#FFDFC4" style="width:28px;height:28px;border:none;padding:0;background:transparent;appearance:none;border-radius:50%;" title="Choose skin tone (live)" />
+                                    </div>
+                                    <!-- Save (+) button next to wheel -->
+                                    <button id="account-save-swatch" class="mannequin-toggle-btn" title="Save current skin color" style="width:36px;height:36px;border-radius:6px;">
+                                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M2 12h20"/></svg>
+                                    </button>
+                                    <!-- three default skin tones (non-persistent) -->
+                                    <button type="button" class="skin-btn" data-skin="#FFDFC4" aria-label="Light skin tone" aria-pressed="false"><span class="swatch" style="background:#FFDFC4"></span></button>
+                                    <button type="button" class="skin-btn" data-skin="#e0b899" aria-label="Medium skin tone"><span class="swatch" style="background:#e0b899"></span></button>
+                                    <button type="button" class="skin-btn" data-skin="#c68642" aria-label="Tan skin tone"><span class="swatch" style="background:#c68642"></span></button>
+                                    <!-- stored swatch container (single slot) -->
+                                    <div id="account-swatch-list" style="display:flex;gap:6px;align-items:center;"></div>
+                                </div>
+                            </div>
+                            <div style="flex:1 1 220px;">
+                                <div class="other-pref-label">Face Shape</div>
+                                <div style="display:flex; gap:8px; margin-top:6px; align-items:center;">
+                                    <button type="button" class="face-btn active" data-morph="Oval Face Shape" aria-label="Oval"><span class="swatch face-oval"></span></button>
+                                    <button type="button" class="face-btn" data-morph="Square Face Shape" aria-label="Square"><span class="swatch face-square"></span></button>
+                                    <button type="button" class="face-btn" data-morph="Diamond Face Shape" aria-label="Diamond"><span class="swatch face-diamond"></span></button>
+                                    <button type="button" class="face-btn" data-morph="Rectangular Face Shape" aria-label="Rectangular"><span class="swatch face-rect"></span></button>
+                                    <button type="button" class="face-btn" data-morph="Heart Face Shape" aria-label="Heart"><span class="swatch face-heart"></span></button>
+                                </div>
+                            </div>
+                            <div style="flex:1 1 220px;">
+                                <div class="other-pref-label">Body Shape</div>
+                                <div style="display:flex; gap:8px; margin-top:6px; align-items:center;">
+                                    <button type="button" class="bodyshape-btn" data-morph="Triangle">Triangle</button>
+                                    <button type="button" class="bodyshape-btn" data-morph="Slim">Slim</button>
+                                    <button type="button" class="bodyshape-btn" data-morph="Curvy">Curvy</button>
+                                </div>
+                            </div>
+                        </div>
                         <form class="measurements">
                             <div class="slider-row">
                                 <label for="shoulders" class="label">Shoulder width</label>
@@ -847,44 +886,150 @@ function get_short_agent($ua)
                             </div>
                         </form>
                     </div>
-                    <div id="otherPrefTab" style="display:none;">
-                        <div class="other-pref-group">
-                            <div class="other-pref-section">
-                                <div class="other-pref-label">Skin Tone</div>
-                                <button type="button" class="skin-btn" data-skin="#FFDFC4" aria-label="Light skin tone" aria-pressed="true"><span class="swatch" style="background:#FFDFC4"></span></button>
-                                <button type="button" class="skin-btn" data-skin="#e0b899" aria-label="Medium skin tone"><span class="swatch" style="background:#e0b899"></span></button>
-                                <button type="button" class="skin-btn" data-skin="#c68642" aria-label="Tan skin tone"><span class="swatch" style="background:#c68642"></span></button>
-                                <button type="button" class="skin-btn" data-skin="#a97c50" aria-label="Dark skin tone"><span class="swatch" style="background:#a97c50"></span></button>
-                            </div>
-                            <div class="other-pref-section">
-                                <div class="other-pref-label">Face Shape</div>
-                                <button type="button" class="face-btn active" data-morph="Oval Face Shape">Oval</button>
-                                <button type="button" class="face-btn" data-morph="Square Face Shape">Square</button>
-                                <button type="button" class="face-btn" data-morph="Diamond Face Shape">Diamond</button>
-                                <button type="button" class="face-btn" data-morph="Rectangular Face Shape">Rectangular</button>
-                                <button type="button" class="face-btn" data-morph="Heart Face Shape">Heart</button>
-                            </div>
-                            <div class="other-pref-section">
-                                <div class="other-pref-label">Body Shape</div>
-                                <button type="button" class="bodyshape-btn" data-morph="Triangle">Triangle</button>
-                                <button type="button" class="bodyshape-btn active" data-morph="Slim">Slim</button>
-                                <button type="button" class="bodyshape-btn" data-morph="Curvy">Curvy</button>
-                            </div>
-                            <div class="other-pref-section">
-                                <div class="other-pref-label">Pose</div>
-                                <button type="button" class="pose-btn" data-morph="'T' Pose">T Pose</button>
-                                <button type="button" class="pose-btn" data-morph="'A' Pose">A Pose</button>
-                                <button type="button" class="pose-btn" data-morph="'W' Pose">W Pose</button>
-                                <button type="button" class="pose-btn" data-morph="'U' Pose">U Pose</button>
-                                </div>
-                            <div class="btn-row">
-                                <button id="save-preferences" class="btn primary save-mannequin">Save</button>
-                            </div>
-                        </div>
-                    </div>
+                    <!-- otherPrefTab removed: preferences merged into Body Measurements -->
                 </div>
                 <!-- ✅ Viewer -->
                 <div class="mannequin-viewer-container" id="mannequinViewer"></div>
+                <script>
+                (function(){
+                    // When mannequin loads, hide clothing and wire skin color wheel
+                    function onReady(){
+                        try{
+                            // hide common clothing categories
+                            if (window.mannequinAPI && typeof window.mannequinAPI.showClothingByKeyword === 'function'){
+                                ['shirt','cap','pants','shoe'].forEach(k=>{ try{ window.mannequinAPI.showClothingByKeyword(k, false);}catch(e){} });
+                            }
+
+                            // wire skin wheel
+                            var wheel = document.getElementById('account-skin-wheel');
+                            var saveBtn = document.getElementById('account-save-swatch');
+                            var list = document.getElementById('account-swatch-list');
+                            function setActiveSkinButton(btn){
+                                // Accept either a button element or a color string
+                                const all = document.querySelectorAll('.skin-btn');
+                                all.forEach(x => { try{ x.setAttribute('aria-pressed','false'); }catch(e){} });
+                                if (!btn) return;
+                                if (typeof btn === 'string'){
+                                    // find matching button by data-skin
+                                    const found = Array.from(all).find(x => x.getAttribute('data-skin') === btn);
+                                    if (found) try{ found.setAttribute('aria-pressed','true'); }catch(e){}
+                                } else {
+                                    try{ btn.setAttribute('aria-pressed','true'); }catch(e){}
+                                }
+                            }
+
+                            if (wheel){
+                                wheel.addEventListener('input', function(){
+                                    try{ if (window.mannequinAPI && typeof window.mannequinAPI.setSkinTone === 'function') window.mannequinAPI.setSkinTone(wheel.value);}catch(e){}
+                                    // wheel selection is not a preset button — clear aria-pressed on presets
+                                    setActiveSkinButton(null);
+                                });
+                            }
+
+                            // On ready, fetch saved mannequin for this user and populate saved swatch if present
+                            (async function(){
+                                try{
+                                    const r = await fetch('api/get_mannequin.php', { cache: 'no-store' });
+                                    if (!r.ok) return;
+                                    const j = await r.json();
+                                    if (!j) return;
+                                    if (j.skin_tone) {
+                                        try{ wheel.value = j.skin_tone; if (window.mannequinAPI && typeof window.mannequinAPI.setSkinTone === 'function') window.mannequinAPI.setSkinTone(j.skin_tone); }catch(e){}
+                                        // render saved swatch (single slot)
+                                        if (list) {
+                                            while(list.firstChild) list.removeChild(list.firstChild);
+                                            var btn = document.createElement('button');
+                                            btn.type = 'button';
+                                            btn.className = 'skin-btn saved-swatch';
+                                            btn.setAttribute('data-skin', j.skin_tone);
+                                            btn.setAttribute('aria-label', 'Saved skin tone');
+                                            var span = document.createElement('span');
+                                            span.className = 'swatch';
+                                            span.style.background = j.skin_tone;
+                                            btn.appendChild(span);
+                                            btn.addEventListener('click', function(){ try{ wheel.value = j.skin_tone; if (window.mannequinAPI) window.mannequinAPI.setSkinTone(j.skin_tone); setActiveSkinButton(btn); }catch(e){} });
+                                            list.appendChild(btn);
+                                            // mark as active
+                                            setActiveSkinButton(btn);
+                                        }
+                                    }
+                                }catch(e){ /* ignore failure to fetch saved mannequin */ }
+                            })();
+                            // Save button wiring is handled in the separate script below
+                        }catch(e){ console.warn('mannequin account wiring error', e); }
+                    }
+                            if (window.mannequin && window.mannequinAPI) onReady(); else window.addEventListener('mannequin.ready', onReady);
+                })();
+                </script>
+                        <script>
+                        // hook default skin buttons to apply instantly
+                        (function(){
+                            // Use delegated click handler so dynamically-added swatches
+                            // behave the same as static presets without re-binding.
+                            document.addEventListener('click', function(ev){
+                                try{
+                                    const btn = ev.target && ev.target.closest && ev.target.closest('.skin-btn');
+                                    if (!btn) return;
+                                    const c = btn.getAttribute('data-skin');
+                                    if (c && window.mannequinAPI && typeof window.mannequinAPI.setSkinTone === 'function') window.mannequinAPI.setSkinTone(c);
+                                    // set aria-pressed on skin buttons so selected state is visible
+                                    document.querySelectorAll('.skin-btn').forEach(x=>{ try{ x.setAttribute('aria-pressed','false'); x.classList.remove('active'); }catch(e){} });
+                                    try{ btn.setAttribute('aria-pressed','true'); btn.classList.add('active'); }catch(e){}
+                                    // sync wheel value for discoverability
+                                    try{ const wheel = document.getElementById('account-skin-wheel'); if (wheel && c) wheel.value = c; }catch(e){}
+                                }catch(e){}
+                            }, false);
+
+                            // modify save behavior to only keep one saved swatch
+                            const saveBtn = document.getElementById('account-save-swatch');
+                            const list = document.getElementById('account-swatch-list');
+                            const wheel = document.getElementById('account-skin-wheel');
+                            if (saveBtn && list && wheel){
+                                saveBtn.addEventListener('click', async function(){
+                                    try{
+                                        const color = wheel.value || '#FFDFC4';
+                                        // save to server so it's persistent
+                                        try{
+                                            const resp = await fetch('api/save_mannequin.php', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ skin_tone: color })
+                                            });
+                                            const j = await resp.json().catch(()=>null);
+                                            if (!resp.ok || (j && j.success === false)){
+                                                const msg = (j && j.message) ? j.message : 'Failed to save skin color';
+                                                if (typeof showNotification === 'function') showNotification(msg, 'error'); else alert(msg);
+                                                return;
+                                            }
+                                        }catch(e){
+                                            // network error: still allow client-side save but notify
+                                            if (typeof showNotification === 'function') showNotification('Saved locally (offline). Will sync later.', 'info');
+                                        }
+
+                                        // update UI: single saved swatch
+                                        while(list.firstChild) list.removeChild(list.firstChild);
+                                        var btn = document.createElement('button');
+                                        btn.type = 'button';
+                                        btn.className = 'skin-btn saved-swatch active';
+                                        btn.setAttribute('data-skin', color);
+                                        btn.setAttribute('aria-label', 'Saved skin tone');
+                                        btn.setAttribute('aria-pressed','true');
+                                        var span = document.createElement('span');
+                                        span.className = 'swatch';
+                                        span.style.background = color;
+                                        btn.appendChild(span);
+                                        // delegated handler will pick up clicks; also set wheel and mannequin now
+                                        list.appendChild(btn);
+                                        try{ wheel.value = color; if (window.mannequinAPI) window.mannequinAPI.setSkinTone(color); }catch(e){}
+                                        // mark saved swatch as active (delegation already applied)
+                                        // (visual active class already set above)
+
+                                        if (typeof showNotification === 'function') showNotification('Saved skin color', 'success');
+                                    }catch(e){ console.warn(e); }
+                                });
+                            }
+                        })();
+                        </script>
                 <?php endif; ?>
             </div>
         </div>

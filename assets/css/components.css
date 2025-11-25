@@ -98,7 +98,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1200;
+    z-index: 999;
     padding: 20px;
 }
 
@@ -310,7 +310,7 @@
     display: none; /* hidden until viewer opens */
     flex-direction: column;
     gap: 10px;
-    z-index: 1200; /* above the canvas but below modals */
+    z-index: 999; /* above the canvas but below modals */
 }
 .mannequin-toggle-btn {
     width: 40px;

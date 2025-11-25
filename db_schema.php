@@ -199,7 +199,6 @@ $statements = [
         `waist` decimal(5,2) DEFAULT NULL,
         `torso_length` decimal(5,2) DEFAULT NULL,
         `arm_length` decimal(5,2) DEFAULT NULL,
-        `body_shape` varchar(50) DEFAULT NULL,
         `face_shape` varchar(50) DEFAULT NULL,
         `skin_tone` varchar(50) DEFAULT NULL,
         `base_model_url` varchar(255) DEFAULT NULL,

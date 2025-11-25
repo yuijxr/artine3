@@ -668,11 +668,19 @@ document.addEventListener('DOMContentLoaded', ()=>{
             b.classList.add('active');
             window.dispatchEvent(new CustomEvent('mannequin.face',{detail:{morph}}));
         }));
+        // Body-shape buttons: when clicked they apply the measurement preset
+        // helper (moves sliders) but are NOT saved to the server.
         document.querySelectorAll('.bodyshape-btn').forEach(b=> b.addEventListener('click', (ev)=>{
-            const morph=b.getAttribute('data-morph');
+            const morph = b.getAttribute('data-morph');
+            // visual active state among siblings
             document.querySelectorAll('.bodyshape-btn').forEach(x=> x.classList.remove('active'));
             b.classList.add('active');
-            window.dispatchEvent(new CustomEvent('mannequin.shape',{detail:{morph}}));
+            // call the viewer's helper to apply preset to sliders/morphs
+            try {
+                if (window.mannequinAPI && typeof window.mannequinAPI.applyMeasurementPreset === 'function') {
+                    window.mannequinAPI.applyMeasurementPreset(morph);
+                }
+            } catch (e) { console.warn('applyMeasurementPreset failed', e); }
         }));
         document.querySelectorAll('.pose-btn').forEach(b=> b.addEventListener('click', (ev)=>{
             const morph=b.getAttribute('data-morph');
@@ -700,18 +708,69 @@ document.addEventListener('DOMContentLoaded', ()=>{
                 const morph = faceBtn.getAttribute('data-morph');
                 window.dispatchEvent(new CustomEvent('mannequin.face',{detail:{morph}}));
             }
-            // body
-            const bodyBtnPref = document.querySelector('.bodyshape-btn.active');
-            if (bodyBtnPref) {
-                const morph = bodyBtnPref.getAttribute('data-morph');
-                window.dispatchEvent(new CustomEvent('mannequin.shape',{detail:{morph}}));
-            }
+            // body: do NOT dispatch a shape event on load. The body-shape
+            // preference should only trigger its preset when the user clicks
+            // the body-shape button. Saved body_shape will still be applied to
+            // the viewer via the server-loaded saved values (applyToViewer),
+            // but that should NOT run presets or change sliders automatically.
+            // (This prevents saved body-shape .active state from overriding
+            // saved numeric sliders on page load.)
         }catch(e){ console.warn('Failed to apply initial mannequin prefs', e); }
     }
 
     // Run immediately (for UI-only changes) and when the mannequin viewer becomes ready
     applyInitialPrefs();
     window.addEventListener('mannequin.ready', applyInitialPrefs, { once: true });
+
+    // Wire sliders so changes immediately update the mannequin (no touch required)
+    function readMeasurementFromSlider(slider){
+        if (!slider) return null;
+        const parent = slider.parentElement;
+        const metricSelect = parent ? parent.querySelector('.metric-select') : null;
+        const metric = metricSelect ? metricSelect.value : 'cm';
+        let val = parseFloat(slider.value);
+        if (metric === 'inch') val = val * 2.54;
+        return Math.round(val * 100) / 100;
+    }
+
+    function updateMannequinFromSliders(){
+        try{
+            if (!window.mannequinAPI || typeof window.mannequinAPI.setMorphByMetric !== 'function') return;
+            // mapping and ranges must match viewer's metricRanges
+            const mapping = {
+                'shoulders': { morph: 'Shoulders', min: 44.00, max: 55.00 },
+                'chest':     { morph: 'Chest', min: 86.00, max: 120.00 },
+                'waist':     { morph: 'Waist', min: 66.00, max: 100.00 },
+                'arms':      { morph: 'Arms', min: 25.00, max: 35.00 },
+                'torso':     { morph: 'Torso', min: 55.00, max: 70.00 }
+            };
+            Object.keys(mapping).forEach(id => {
+                const slider = document.getElementById(id);
+                if (!slider) return;
+                const val = readMeasurementFromSlider(slider);
+                if (val === null) return;
+                const cfg = mapping[id];
+                try { window.mannequinAPI.setMorphByMetric(cfg.morph, Number(val), cfg.min, cfg.max); } catch(e){}
+            });
+        }catch(e){ console.warn('updateMannequinFromSliders failed', e); }
+    }
+
+    // Attach listeners to sliders and metric selects so they update the mannequin live
+    (function wireSliders(){
+        ['shoulders','chest','waist','arms','torso'].forEach(id=>{
+            const slider = document.getElementById(id);
+            if (!slider) return;
+            slider.addEventListener('input', ()=> updateMannequinFromSliders());
+            slider.addEventListener('change', ()=> updateMannequinFromSliders());
+            const parent = slider.parentElement;
+            const metricSelect = parent ? parent.querySelector('.metric-select') : null;
+            if (metricSelect) metricSelect.addEventListener('change', ()=> updateMannequinFromSliders());
+        });
+
+        // ensure we update mannequin when viewer becomes ready (if sliders were programmatically set earlier)
+        if (window.mannequin && window.mannequinAPI) updateMannequinFromSliders();
+        else window.addEventListener('mannequin.ready', updateMannequinFromSliders, { once: true });
+    })();
 
     // Save measurements / preferences to server when Save button clicked
     (function(){
@@ -736,7 +795,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
                 waist: readMetric('waist'),
                 torso_length: readMetric('torso'),
                 arm_length: readMetric('arms'),
-                body_shape: (document.querySelector('.bodyshape-btn.active') || {}).getAttribute ? (document.querySelector('.bodyshape-btn.active')?.getAttribute('data-morph')) : null,
+                // body_shape removed from payload; presets are not saved
                 face_shape: (document.querySelector('.face-btn.active') || {}).getAttribute ? (document.querySelector('.face-btn.active')?.getAttribute('data-morph')) : null,
                 skin_tone: (document.querySelector('.skin-btn[aria-pressed="true"]') || {}).getAttribute ? (document.querySelector('.skin-btn[aria-pressed="true"]')?.getAttribute('data-skin')) : null
             };
@@ -807,11 +866,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
                     const fb = document.querySelector('.face-btn[data-morph="' + saved.face_shape + '"]');
                     if (fb) fb.classList.add('active');
                 }
-                if (saved.body_shape) {
-                    document.querySelectorAll('.bodyshape-btn').forEach(b=> b.classList.remove('active'));
-                    const bb = document.querySelector('.bodyshape-btn[data-morph="' + saved.body_shape + '"]');
-                    if (bb) bb.classList.add('active');
-                }
+                // Do not auto-activate body_shape on load. Body-shape serves only
+                // as a helper for moving sliders and should not override saved
+                // numeric measurements or take effect automatically.
 
                 // If viewer is ready, set its skin/morphs too
                 function applyToViewer(){
@@ -819,13 +876,17 @@ document.addEventListener('DOMContentLoaded', ()=>{
                         if (!window.mannequinAPI) return;
                         if (saved.skin_tone && typeof window.mannequinAPI.setSkinTone === 'function') window.mannequinAPI.setSkinTone(saved.skin_tone);
                         if (saved.face_shape && typeof window.mannequinAPI.setMorphExclusive === 'function') window.mannequinAPI.setMorphExclusive(saved.face_shape, [saved.face_shape]);
-                        if (saved.body_shape && typeof window.mannequinAPI.setMorphExclusive === 'function') window.mannequinAPI.setMorphExclusive(saved.body_shape, [saved.body_shape]);
+                        // saved.body_shape will not be applied to the mannequin automatically
                         // measurements: convert to influence similarly to product.js mapping
                         const mapping = {
                             shoulder_width: 'Shoulders', chest_bust: 'Chest', waist: 'Waist', torso_length: 'Torso', arm_length: 'Arms'
                         };
                         const ranges = {
-                            'Shoulders': [40,55], 'Chest':[80,110], 'Waist':[70,100], 'Torso':[50,80], 'Arms':[150,200]
+                            'Shoulders': [44.00, 55.00],
+                            'Chest':     [86.00, 120.00],
+                            'Waist':     [66.00, 100.00],
+                            'Torso':     [55.00, 70.00],
+                            'Arms':      [25.00, 35.00]
                         };
                         Object.keys(mapping).forEach(k => {
                             const v = saved[k]; if (v === null || typeof v === 'undefined') return;
@@ -847,6 +908,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
                 if (window.mannequin && window.mannequinAPI) applyToViewer();
                 else window.addEventListener('mannequin.ready', applyToViewer, { once: true });
+                // Ensure the live updater picks up the newly set sliders as well
+                try { if (typeof updateMannequinFromSliders === 'function') updateMannequinFromSliders(); } catch(e){}
             }catch(e){ console.warn('Failed to apply saved mannequin to UI', e); }
         }
 

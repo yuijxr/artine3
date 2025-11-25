@@ -35,10 +35,35 @@
 
 .slider {
     flex: 1;
-    accent-color: #0095FF;
-    height: 4px;
-    border-radius: 2px;
-    background: #e9e9e9;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 8px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #e9eef9, #f7f9fc);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.04);
+}
+
+/* WebKit thumb */
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid #1976d2;
+    box-shadow: 0 2px 6px rgba(25,118,210,0.12);
+    margin-top: -5px; /* center thumb vertically on track */
+}
+
+/* Firefox thumb */
+.slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid #1976d2;
+    box-shadow: 0 2px 6px rgba(25,118,210,0.12);
 }
 
 .value-display {
@@ -327,6 +352,16 @@
 .other-pref-section .face-btn, .other-pref-section .bodyshape-btn, .other-pref-section .pose-btn { 
     margin-right: 5px; 
 }
+
+/* Face shape swatches: visually similar to skin swatches but use shapes */
+.face-btn { padding: 6px; display:inline-flex; align-items:center; justify-content:center; }
+.face-btn .swatch { width: 20px; height: 20px; display:block; border:1px solid #e2e8f0; background:#f7fafc; }
+.face-btn.active .swatch { outline: 2px solid #1976d2; box-shadow: 0 4px 14px rgba(25,118,210,0.12); }
+.face-oval { border-radius: 50%; }
+.face-square { border-radius: 6px; }
+.face-diamond { transform: rotate(45deg); width:20px; height:20px; }
+.face-rect { border-radius: 4px / 12px; }
+.face-heart { background: linear-gradient(135deg,#fff 40%, #f0f4f8 60%); border-radius: 50% 50% 45% 45%; }
 
 /* input with action (e.g. inline edit link inside input) */
 .input-with-action { 

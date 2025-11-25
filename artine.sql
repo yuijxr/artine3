@@ -338,7 +338,6 @@ CREATE TABLE `users` (
   `waist` decimal(5,2) DEFAULT NULL,
   `torso_length` decimal(5,2) DEFAULT NULL,
   `arm_length` decimal(5,2) DEFAULT NULL,
-  `body_shape` varchar(50) DEFAULT NULL,
   `face_shape` varchar(50) DEFAULT NULL,
   `skin_tone` varchar(50) DEFAULT NULL,
   `base_model_url` varchar(255) DEFAULT NULL,
@@ -349,9 +348,9 @@ CREATE TABLE `users` (
 -- Dumping data for table `users`
 --
 
-INSERT INTO `users` (`user_id`, `first_name`, `last_name`, `gender`, `email`, `password_hash`, `phone`, `created_at`, `updated_at`, `email_verified`, `email_2fa_enabled`, `last_login`, `deleted_at`, `shoulder_width`, `chest_bust`, `waist`, `torso_length`, `arm_length`, `body_shape`, `face_shape`, `skin_tone`, `base_model_url`, `measurements_updated_at`) VALUES
-(41, 'Jessa', 'Caboteja', 'female', '422002632@ntc.edu.ph', '$2y$10$Fwh.Ozay5XUYkmyyPkMu2uuVOhZrLZo/zUatr6u1ybHx9RDPDe.IG', '09915223550', '2025-11-12 16:43:56', '2025-11-13 07:13:54', 1, 0, '2025-11-12 20:02:08', NULL, 40.00, 80.00, 70.00, 50.00, 150.00, 'Straight Body', 'Oval Face Shape', '#FFDFC4', NULL, '2025-11-13 07:13:54'),
-(42, 'Jessa', 'Caboteja', 'female', 'jrmugly3@gmail.com', '$2y$10$868yOHeJghJQ.N69xvhpvOWvuHBBLXEOVSASJsjQyEUdc64iAxTUS', '09915223550', '2025-11-12 19:00:42', '2025-11-12 19:47:29', 1, 1, '2025-11-12 19:45:21', NULL, 48.00, 94.00, 84.00, 64.00, 175.00, 'Straight Body', 'Oval Face Shape', '#FFDFC4', NULL, '2025-11-12 19:47:29');
+INSERT INTO `users` (`user_id`, `first_name`, `last_name`, `gender`, `email`, `password_hash`, `phone`, `created_at`, `updated_at`, `email_verified`, `email_2fa_enabled`, `last_login`, `deleted_at`, `shoulder_width`, `chest_bust`, `waist`, `torso_length`, `arm_length`, `face_shape`, `skin_tone`, `base_model_url`, `measurements_updated_at`) VALUES
+(41, 'Jessa', 'Caboteja', 'female', '422002632@ntc.edu.ph', '$2y$10$Fwh.Ozay5XUYkmyyPkMu2uuVOhZrLZo/zUatr6u1ybHx9RDPDe.IG', '09915223550', '2025-11-12 16:43:56', '2025-11-13 07:13:54', 1, 0, '2025-11-12 20:02:08', NULL, 40.00, 80.00, 70.00, 50.00, 150.00, 'Oval Face Shape', '#FFDFC4', NULL, '2025-11-13 07:13:54'),
+(42, 'Jessa', 'Caboteja', 'female', 'jrmugly3@gmail.com', '$2y$10$868yOHeJghJQ.N69xvhpvOWvuHBBLXEOVSASJsjQyEUdc64iAxTUS', '09915223550', '2025-11-12 19:00:42', '2025-11-12 19:47:29', 1, 1, '2025-11-12 19:45:21', NULL, 48.00, 94.00, 84.00, 64.00, 175.00, 'Oval Face Shape', '#FFDFC4', NULL, '2025-11-12 19:47:29');
 
 -- --------------------------------------------------------
 

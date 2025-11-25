@@ -37,15 +37,13 @@ $chest = isset($data['chest_bust']) ? $data['chest_bust'] : null;
 $waist = isset($data['waist']) ? $data['waist'] : null;
 $torso = isset($data['torso_length']) ? $data['torso_length'] : null;
 $arm = isset($data['arm_length']) ? $data['arm_length'] : null;
-$body_shape = isset($data['body_shape']) ? $data['body_shape'] : null;
 $face_shape = isset($data['face_shape']) ? $data['face_shape'] : null;
 $skin_tone = isset($data['skin_tone']) ? $data['skin_tone'] : null;
 $base_model_url = isset($data['base_model_url']) ? $data['base_model_url'] : null;
 
-// Update measurement fields directly on users table (merged schema)
-$stmt = $conn->prepare('UPDATE users SET shoulder_width = ?, chest_bust = ?, waist = ?, torso_length = ?, arm_length = ?, body_shape = ?, face_shape = ?, skin_tone = ?, base_model_url = ?, measurements_updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
+$stmt = $conn->prepare('UPDATE users SET shoulder_width = ?, chest_bust = ?, waist = ?, torso_length = ?, arm_length = ?, face_shape = ?, skin_tone = ?, base_model_url = ?, measurements_updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
 if (!$stmt) { echo json_encode(['success'=>false,'message'=>'DB prepare failed']); exit; }
-$stmt->bind_param('dddddssssi', $shoulder, $chest, $waist, $torso, $arm, $body_shape, $face_shape, $skin_tone, $base_model_url, $user_id);
+$stmt->bind_param('dddddsssi', $shoulder, $chest, $waist, $torso, $arm, $face_shape, $skin_tone, $base_model_url, $user_id);
 $ok = $stmt->execute();
 $stmt->close();
 if ($ok) echo json_encode(['success'=>true,'message'=>'Mannequin saved']); else echo json_encode(['success'=>false,'message'=>'Failed to save']);
