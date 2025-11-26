@@ -1678,17 +1678,35 @@ function initViewer() {
                         // Merge with any explicit bodyMeasurements passed via context (context overrides)
                         const user = Object.assign({}, { shoulders: null, chest: null, waist: null, arms: null, torso: null }, userFromMannequin, context.bodyMeasurements || {});
 
-                        // Load sizes.json and pick a recommended size WITHOUT doing
-                        // any measurement computations. We simply choose a deterministic
-                        // entry from `sizes.json` (the median key) so recommendations
-                        // are driven by the available size tokens only.
+                        // Load sizes.json and pick a recommended size. Prefer an explicit
+                        // recommendation passed via `context.recommendedSize`, the page
+                        // DOM element `#sizeRecommendation`, or a global `window.sizeRecommendation`.
+                        // Fall back to a deterministic median key from `sizes.json`.
                         return fetch(sizesUrl, {cache:'no-store'}).then(r=>r.json()).then(sizesData=>{
                             const sizeKeys = Object.keys(sizesData || {});
-                            let recommendedSize = 'M';
-                            if (sizeKeys.length > 0){
-                                // pick the middle entry (deterministic, no math on user data)
-                                const mid = Math.floor((sizeKeys.length - 1) / 2);
-                                recommendedSize = sizeKeys[mid] || sizeKeys[0];
+                            // start with any recommendation provided by caller/context
+                            let recommendedSize = (context && context.recommendedSize) ? String(context.recommendedSize).trim() : '';
+                            // if none provided, try page DOM element (product.php writes this)
+                            try{
+                                if (!recommendedSize) {
+                                    const domRec = document.getElementById('sizeRecommendation');
+                                    if (domRec && domRec.textContent && String(domRec.textContent || '').trim() && String(domRec.textContent || '').trim() !== '—') {
+                                        recommendedSize = String(domRec.textContent).trim();
+                                    }
+                                }
+                            }catch(e){}
+
+                            // if still none, fall back to any existing global (previously set)
+                            try{ if (!recommendedSize && window.sizeRecommendation) recommendedSize = String(window.sizeRecommendation).trim(); }catch(e){}
+
+                            // final fallback: deterministic median from sizes.json
+                            if (!recommendedSize) {
+                                if (sizeKeys.length > 0){
+                                    const mid = Math.floor((sizeKeys.length - 1) / 2);
+                                    recommendedSize = sizeKeys[mid] || sizeKeys[0];
+                                } else {
+                                    recommendedSize = 'M';
+                                }
                             }
                             try{ window.sizeRecommendation = recommendedSize; }catch(e){}
 
