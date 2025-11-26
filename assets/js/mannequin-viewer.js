@@ -67,12 +67,17 @@ window.mannequinAPI = {
                     const applyMat = (mat) => {
                         if (!mat) return;
                         try {
-                            // Common case: material.color exists and supports set()
-                            if (mat.color && typeof mat.color.set === 'function') {
-                                mat.color.set(color);
-                            } else if (mat.uniforms && mat.uniforms.diffuse && mat.uniforms.diffuse.value && typeof mat.uniforms.diffuse.value.set === 'function') {
-                                // some custom materials expose a diffuse uniform
-                                mat.uniforms.diffuse.value.set(color);
+                            // convert sRGB color to linear if possible for correct rendering
+                            try{
+                                const c = new THREE.Color(String(color));
+                                if (typeof c.convertSRGBToLinear === 'function') c.convertSRGBToLinear();
+                                if (mat.color && typeof mat.color.set === 'function') {
+                                    mat.color.copy(c);
+                                } else if (mat.uniforms && mat.uniforms.diffuse && mat.uniforms.diffuse.value && typeof mat.uniforms.diffuse.value.set === 'function') {
+                                    mat.uniforms.diffuse.value.copy(c);
+                                }
+                            }catch(e){ /* fallback to direct set */
+                                try{ if (mat.color && typeof mat.color.set === 'function') mat.color.set(color); }catch(_){}
                             }
                             // Ensure material updates in renderer
                             try { mat.needsUpdate = true; } catch (e) { /* ignore */ }
@@ -87,6 +92,7 @@ window.mannequinAPI = {
                 } catch (e) { /* ignore per-node failures */ }
             });
         } catch (e) { /* ignore traversal failures */ }
+        try{ if (window.mannequinAPI && typeof window.mannequinAPI.updateAIFeedback === 'function') window.mannequinAPI.updateAIFeedback(); }catch(e){}
     },
     setMorphExclusive(morphName, categoryShapes) {
         const mesh = findMeshWithMorph(morphName);
@@ -203,15 +209,18 @@ function initViewer() {
         container.appendChild(loaderOverlay);
 
     // === Renderer ===
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.outputEncoding = THREE.sRGBEncoding; // ✅ proper color brightness
     // Use physically correct lights and filmic tone mapping for better color fidelity
     try {
-        renderer.physicallyCorrectLights = true;
+            container.style.backgroundSize = 'cover';
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.0;
     } catch (e) { /* ignore if not supported */ }
+    // make renderer canvas transparent so container CSS background shows
+    try { renderer.setClearColor(0x000000, 0); } catch (e) {}
+    renderer.domElement.style.background = 'transparent';
     // hide renderer until GLB fully loaded to avoid flashing incomplete model
     renderer.domElement.style.visibility = 'hidden';
     container.appendChild(renderer.domElement);
@@ -273,7 +282,7 @@ function initViewer() {
 
     controls.enableZoom = true;
     controls.minDistance = 2;
-    controls.maxDistance = 3;
+    controls.maxDistance = 4;
 
     controls.enablePan = false; // keep panning disabled for consistency
     // ❌ removed polar lock, so you can rotate freely (up/down/around)
@@ -797,10 +806,45 @@ function initViewer() {
                             n.traverse && n.traverse(child => {
                                 if (!child.isMesh || !child.material) return;
                                 try {
+                                    // Ensure this mesh has its own unique material instances
+                                    try{
+                                        child.userData = child.userData || {};
+                                        if (!child.userData._recolorUnique) {
+                                            if (Array.isArray(child.material)) {
+                                                child.material = child.material.map(m => m && m.clone ? m.clone() : m);
+                                            } else {
+                                                child.material = (child.material && child.material.clone) ? child.material.clone() : child.material;
+                                            }
+                                            child.userData._recolorUnique = true;
+                                        }
+                                    }catch(e){}
+
+                                    const applyColorToMat = (mat) => {
+                                        if (!mat) return;
+                                        try{
+                                            // convert sRGB to linear for display correctness
+                                            const c = new THREE.Color(String(hex));
+                                            if (typeof c.convertSRGBToLinear === 'function') c.convertSRGBToLinear();
+                                            if (mat.color && typeof mat.color.copy === 'function') {
+                                                mat.color.copy(c);
+                                            } else if (mat.uniforms && mat.uniforms.diffuse && mat.uniforms.diffuse.value && typeof mat.uniforms.diffuse.value.copy === 'function') {
+                                                mat.uniforms.diffuse.value.copy(c);
+                                            }
+                                            // if material has a color map/texture, stash and remove it so the flat color shows
+                                            try{
+                                                if (mat.map) {
+                                                    mat.userData = mat.userData || {};
+                                                    if (!mat.userData._origMap) mat.userData._origMap = mat.map;
+                                                    mat.map = null;
+                                                }
+                                            }catch(e){}
+                                            try{ mat.needsUpdate = true; }catch(e){}
+                                        }catch(e){ /* ignore per-mat failures */ }
+                                    };
                                     if (Array.isArray(child.material)) {
-                                        child.material.forEach(mat => { if (mat && mat.color) mat.color.set(hex); });
-                                    } else if (child.material && child.material.color) {
-                                        child.material.color.set(hex);
+                                        child.material.forEach(mat => applyColorToMat(mat));
+                                    } else {
+                                        applyColorToMat(child.material);
                                     }
                                 } catch (e) { /* ignore material set failures */ }
                             });
@@ -869,7 +913,10 @@ function initViewer() {
                         wrapper.addEventListener('mouseenter', ()=>{ tip.style.opacity = '1'; });
                         wrapper.addEventListener('mouseleave', ()=>{ tip.style.opacity = '0'; });
 
-                        sw.addEventListener('input', ()=>{ window.mannequinAPI.setClothingColor(key, sw.value); });
+                        sw.addEventListener('input', ()=>{ 
+                            window.mannequinAPI.setClothingColor(key, sw.value);
+                            try{ if (window.mannequinAPI && typeof window.mannequinAPI.updateAIFeedback === 'function') window.mannequinAPI.updateAIFeedback(); }catch(e){}
+                        });
                         // expose reference to tooltip for potential future use
                         sw._tooltip = tip;
                         sw._wrapper = wrapper;
@@ -910,7 +957,7 @@ function initViewer() {
                     genBtn.classList.add('mannequin-toggle-btn');
                     panel.appendChild(genBtn);
 
-                    // AI button placed below the generator (placeholder for future AI features)
+                    // AI button placed below the generator
                     const aiBtn = document.createElement('button');
                     aiBtn.type = 'button';
                     aiBtn.title = 'AI assistant (placeholder)';
@@ -922,9 +969,13 @@ function initViewer() {
                     aiBtn.style.cursor = 'pointer';
                     aiBtn.classList.add('mannequin-toggle-btn');
                     aiBtn.id = 'mannequin-ai-btn';
-                    // small click handler stub
+                    // show detailed AI feedback panel when clicked
                     aiBtn.addEventListener('click', ()=>{
-                        try{ if (typeof showNotification === 'function') showNotification('AI feature coming soon', 'info'); else console.log('AI feature coming soon'); }catch(e){}
+                        try{
+                            if (window.mannequinAPI && typeof window.mannequinAPI.analyzeAndApplyMannequinAI === 'function') {
+                                window.mannequinAPI.analyzeAndApplyMannequinAI().catch(()=>{});
+                            }
+                        }catch(e){ console.warn('AI button failed', e); }
                     });
                     panel.appendChild(aiBtn);
 
@@ -1082,6 +1133,130 @@ function initViewer() {
                 }catch(e){ /* ignore UI creation failures */ }
             })();
 
+            // Background selector (bottom-left): 3 presets + file picker
+            (function createBackgroundPanel(){
+                try{
+                    // Only show the background controls on product pages
+                    const isProductPage = (typeof window.location !== 'undefined' && window.location.pathname && window.location.pathname.indexOf('product.php') !== -1);
+                    if (!isProductPage) return;
+                    const panel = document.createElement('div');
+                    panel.id = 'mannequinBackgroundPanel';
+                    panel.style.position = 'absolute';
+                    panel.style.left = '8px';
+                    panel.style.bottom = '8px';
+                    panel.style.zIndex = 997;
+                    panel.style.display = 'flex';
+                    panel.style.gap = '8px';
+                    panel.style.background = 'transparent';
+
+                    // presets (use external images that are permissively available)
+                    const presets = [
+                        // beach, office, street (HD)
+                        'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=2000&q=80',
+                        'https://images.unsplash.com/photo-1557800636-894a64c1696f?auto=format&fit=crop&w=2000&q=80',
+                        'https://images.unsplash.com/photo-1467269204594-9661b134dd2b?auto=format&fit=crop&w=2000&q=80'
+                    ];
+
+                    // keep track of object URL to revoke when replaced
+                    let _currentObjectUrl = null;
+
+                    function setBackgroundUrl(url, btn){
+                        try{
+                            // prefer CSS background so it always centers and fits
+                            if (!container) return;
+                            // clear three.js scene background so CSS shows through
+                            try{ scene.background = null; }catch(e){}
+                            container.style.backgroundImage = `url("${url}")`;
+                            container.style.backgroundRepeat = 'no-repeat';
+                            container.style.backgroundPosition = 'center center';
+                            container.style.backgroundSize = 'cover';
+                            // mark active button (if provided)
+                            try{
+                                const siblings = panel.querySelectorAll('.mannequin-toggle-btn');
+                                siblings.forEach(s => s.classList.remove('active'));
+                                if (btn && btn.classList) btn.classList.add('active');
+                            }catch(e){}
+                        }catch(e){ console.warn('setBackgroundUrl failed', e); }
+                    }
+
+                    // make a thumbnail element
+                    function makeThumb(src, title){
+                        const b = document.createElement('button');
+                        b.type = 'button';
+                        b.classList.add('mannequin-toggle-btn');
+                        b.style.width = '40px';
+                        b.style.height = '40px';
+                        b.style.padding = '0';
+                        b.style.borderRadius = '6px';
+                        b.style.overflow = 'hidden';
+                        b.style.display = 'inline-flex';
+                        b.style.alignItems = 'center';
+                        b.style.justifyContent = 'center';
+                        b.style.background = '#fff';
+                        b.style.border = '1px solid rgba(0,0,0,0.08)';
+                        b.title = title || '';
+                        const img = document.createElement('img');
+                        img.src = src;
+                        img.alt = title || '';
+                        img.style.width = '100%';
+                        img.style.height = '100%';
+                        img.style.objectFit = 'cover';
+                                                img.style.objectPosition = 'center center';
+                        img.style.display = 'block';
+                        b.appendChild(img);
+                        b.addEventListener('click', ()=>{
+                            try{ setBackgroundUrl(src, b); }catch(e){}
+                        });
+                        return b;
+                    }
+
+                    // create presets
+                    presets.forEach((p, idx)=>{
+                        try{ panel.appendChild(makeThumb(p, 'Preset background ' + (idx+1))); }catch(e){}
+                    });
+
+                    // file picker button (fourth box)
+                    const fileBtn = document.createElement('button');
+                    fileBtn.type = 'button';
+                    fileBtn.classList.add('mannequin-toggle-btn');
+                    fileBtn.style.width = '40px';
+                    fileBtn.style.height = '40px';
+                    fileBtn.style.borderRadius = '6px';
+                    fileBtn.style.display = 'inline-flex';
+                    fileBtn.style.alignItems = 'center';
+                    fileBtn.style.justifyContent = 'center';
+                    fileBtn.style.fontSize = '16px';
+                    fileBtn.style.background = '#fafafa';
+                    fileBtn.style.border = '1px dashed rgba(0,0,0,0.08)';
+                    fileBtn.title = 'Choose custom background';
+                    fileBtn.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+
+                    const fileInput = document.createElement('input');
+                    fileInput.type = 'file';
+                    fileInput.accept = 'image/*';
+                    fileInput.style.display = 'none';
+
+                    fileBtn.addEventListener('click', ()=> fileInput.click());
+
+                    fileInput.addEventListener('change', (ev)=>{
+                        try{
+                            const f = ev.target.files && ev.target.files[0];
+                            if (!f) return;
+                            // revoke previous URL
+                            if (_currentObjectUrl) { try{ URL.revokeObjectURL(_currentObjectUrl); } catch(e){} }
+                            const obj = URL.createObjectURL(f);
+                            _currentObjectUrl = obj;
+                            setBackgroundUrl(obj, fileBtn);
+                        }catch(e){ console.warn('background file load failed', e); }
+                    });
+
+                    panel.appendChild(fileBtn);
+                    panel.appendChild(fileInput);
+
+                    container.appendChild(panel);
+                }catch(e){ /* ignore background UI failures */ }
+            })();
+
             // Helper: convert morph name to slider id (lowercase, spaces/specials to dashes)
             function morphNameToId(name) {
                 return name.toLowerCase()
@@ -1165,6 +1340,7 @@ function initViewer() {
                     let disp = format(measured);
                     valueDisplay.value = disp;
                     setMorph(parseFloat(measured));
+                    try{ if (window.mannequinAPI && typeof window.mannequinAPI.updateAIFeedback === 'function') window.mannequinAPI.updateAIFeedback(); }catch(e){}
                 });
 
                 // Only allow numbers in valueDisplay, but don't update slider until blur
@@ -1345,6 +1521,356 @@ function initViewer() {
                     return entries[0].mesh.morphTargetInfluences[entries[0].index] || 0;
                 } catch (e) { return 0; }
             }
+
+            // --- AI Fit Feedback UI ---
+            // Top-center short feedback when sizes are selected.
+            (function createAIFeedback(){
+                    try{
+                    // feedback UI removed by request — no DOM element created
+                    const fb = null;
+                    // Expose an AI helper that will analyze current state and
+                    // apply size, pose, and clothing color suggestions.
+                    function analyzeAndApplyMannequinAI(context){
+                        context = context || {};
+                        // Defensive references
+                        const api = window.mannequinAPI || {};
+                        const sizesUrl = 'assets/js/sizes.json';
+
+                        function hexToHsl(hex){
+                            hex = String(hex || '').replace('#','');
+                            if (hex.length===3) hex = hex.split('').map(c=>c+c).join('');
+                            const r = parseInt(hex.substr(0,2),16)/255;
+                            const g = parseInt(hex.substr(2,2),16)/255;
+                            const b = parseInt(hex.substr(4,2),16)/255;
+                            const max = Math.max(r,g,b), min = Math.min(r,g,b);
+                            let h=0, s=0, l=(max+min)/2;
+                            if (max!==min){
+                                const d = max-min;
+                                s = l>0.5? d/(2-max-min) : d/(max+min);
+                                switch(max){
+                                    case r: h = (g-b)/d + (g<b?6:0); break;
+                                    case g: h = (b-r)/d + 2; break;
+                                    case b: h = (r-g)/d + 4; break;
+                                }
+                                h /= 6;
+                            }
+                            return { h: Math.round(h*360), s: Math.round(s*100), l: Math.round(l*100) };
+                        }
+                        function hslToHex(h,s,l){
+                            s /= 100; l /= 100;
+                            const k = n => (n + h/30) % 12;
+                            const a = s * Math.min(l, 1 - l);
+                            const f = n => {
+                                const color = l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+                                return Math.round(255 * color).toString(16).padStart(2, '0');
+                            };
+                            return `#${f(0)}${f(8)}${f(4)}`;
+                        }
+
+                        // Choose neutral palette candidates
+                        const NEUTRALS = {
+                            black: '#000000',
+                            white: '#ffffff',
+                            gray: '#777777',
+                            navy: '#1f3b6f',
+                            beige: '#d6c7ac',
+                            denim: '#3b5998'
+                        };
+
+                        // Determine shirt color
+                        const shirtHex = (context.shirtColor || window.productDominantColor || '#1976d2').toLowerCase();
+                        const shirtHsl = hexToHsl(shirtHex);
+                        const shirtIsNeutral = (shirtHsl.s < 18);
+
+                        // style hint
+                        const style = (context.style || '').toLowerCase();
+
+                        // Accent color: complementary for creative, analogous for subtle
+                        function complementary(hex){ const h = hexToHsl(hex); return hslToHex((h.h+180)%360, Math.min(90, Math.max(30, h.s+6)), Math.min(70, Math.max(20, Math.abs(h.l-50)>10? h.l : 50))); }
+                        function analogous(hex){ const h = hexToHsl(hex); return hslToHex((h.h+24)%360, Math.min(88, Math.max(28, h.s+4)), Math.min(78, Math.max(22, h.l+6))); }
+
+                        // Build multiple 60/30/10 color combinations (dominant/secondary/accent)
+                        // We generate a small set of candidate combos and pick one by style.
+                        function makeCombo(dominant, secondary, accent){ return { pants: dominant, shoes: accent, cap: accent, dominant, secondary, accent }; }
+
+                        const combos = [];
+
+                        // Helper to pick a neutral contrasting pant for a colored shirt
+                        function neutralForShirt(hsl){
+                            if (hsl.l > 60) return NEUTRALS.navy; // light shirt -> darker pants
+                            return NEUTRALS.beige; // darker shirt -> lighter neutral
+                        }
+
+                        if (shirtIsNeutral){
+                            // Shirt neutral -> allow colored dominant (pants) or colored accent (shoes/cap)
+                            const accent1 = complementary(shirtHex);
+                            combos.push(makeCombo(NEUTRALS.denim, shirtHex, accent1)); // classic casual
+                            combos.push(makeCombo(NEUTRALS.navy, shirtHex, '#d9534f')); // denim/navy with red accent
+                            combos.push(makeCombo(NEUTRALS.beige, shirtHex, analogous(shirtHex))); // earthy
+                        } else {
+                            // Shirt colored -> neutral pants dominant, shirt is secondary (30%), accent is shoes/cap (10%)
+                            const neutral = neutralForShirt(shirtHsl);
+                            combos.push(makeCombo(neutral, shirtHex, complementary(shirtHex))); // balanced
+                            combos.push(makeCombo(NEUTRALS.denim, shirtHex, NEUTRALS.white)); // casual denim + white shoes
+                            combos.push(makeCombo(NEUTRALS.navy, shirtHex, NEUTRALS.beige)); // refined
+                        }
+
+                        // Creative variants: let accent be bolder or triadic
+                        combos.push(makeCombo(NEUTRALS.denim, shirtHex, hslToHex((shirtHsl.h+30)%360, Math.min(90, shirtHsl.s+10), Math.max(20, shirtHsl.l-8))));
+                        combos.push(makeCombo(NEUTRALS.black, shirtHex, '#ffffff'));
+
+                        // If shirt is very bright, force more neutral combinations
+                        if (shirtHsl.s > 70 && shirtHsl.l > 45){
+                            combos.unshift(makeCombo(NEUTRALS.navy, shirtHex, NEUTRALS.white));
+                            combos.unshift(makeCombo(NEUTRALS.beige, shirtHex, NEUTRALS.gray));
+                        }
+
+                        // Deduplicate by pants+shoes+cap
+                        const seen = new Set();
+                        const uniq = [];
+                        combos.forEach(c=>{
+                            const key = [c.pants,c.shoes,c.cap].join('|');
+                            if (!seen.has(key)){ seen.add(key); uniq.push(c); }
+                        });
+
+                        // Choose combo based on style preference
+                        let chosenCombo = uniq[0] || { pants: NEUTRALS.denim, shoes: NEUTRALS.white, cap: NEUTRALS.gray };
+                        if (style === 'formal'){
+                            chosenCombo = uniq.find(c=> c.pants === NEUTRALS.navy || c.pants === NEUTRALS.black) || chosenCombo;
+                        } else if (style === 'creative'){
+                            chosenCombo = uniq.find(c=> c.shoes && c.shoes !== NEUTRALS.white) || chosenCombo;
+                        } else {
+                            // casual: prefer denim-dominant combos
+                            chosenCombo = uniq.find(c=> c.pants === NEUTRALS.denim) || chosenCombo;
+                        }
+
+                        let pants = chosenCombo.pants;
+                        let shoes = chosenCombo.shoes;
+                        let cap = chosenCombo.cap;
+
+                        // If context provided pants/shoes/cap override, prefer provided but still ensure rule of 3 colors
+                        if (context.pantsColor) pants = context.pantsColor;
+                        if (context.shoesColor) shoes = context.shoesColor;
+                        if (context.capColor) cap = context.capColor;
+
+                        // Build user measurement object from mannequin morph influences (preferred)
+                        const userFromMannequin = {};
+                        try{
+                            // mapping morph names -> measurement keys
+                            const mapping = { Shoulders: 'shoulders', Chest: 'chest', Waist: 'waist', Arms: 'arms', Torso: 'torso' };
+                            Object.keys(mapping).forEach(morph => {
+                                try{
+                                    const influence = getCurrentInfluenceFor(morph);
+                                    const key = mapping[morph];
+                                    const range = metricRanges[key] && metricRanges[key].cm ? metricRanges[key].cm : null;
+                                    if (range && typeof influence === 'number'){
+                                        const min = range[0], max = range[1];
+                                        let measurement = min + influence * (max - min);
+                                        // waist inversion: in code waist influence is (max - val)/(max-min)
+                                        if (key === 'waist') measurement = max - influence * (max - min);
+                                        // round to 2 decimals
+                                        userFromMannequin[key] = Math.round(measurement * 100) / 100;
+                                    }
+                                }catch(e){}
+                            });
+                        }catch(e){}
+
+                        // Merge with any explicit bodyMeasurements passed via context (context overrides)
+                        const user = Object.assign({}, { shoulders: null, chest: null, waist: null, arms: null, torso: null }, userFromMannequin, context.bodyMeasurements || {});
+
+                        // Load sizes.json and pick a recommended size WITHOUT doing
+                        // any measurement computations. We simply choose a deterministic
+                        // entry from `sizes.json` (the median key) so recommendations
+                        // are driven by the available size tokens only.
+                        return fetch(sizesUrl, {cache:'no-store'}).then(r=>r.json()).then(sizesData=>{
+                            const sizeKeys = Object.keys(sizesData || {});
+                            let recommendedSize = 'M';
+                            if (sizeKeys.length > 0){
+                                // pick the middle entry (deterministic, no math on user data)
+                                const mid = Math.floor((sizeKeys.length - 1) / 2);
+                                recommendedSize = sizeKeys[mid] || sizeKeys[0];
+                            }
+                            try{ window.sizeRecommendation = recommendedSize; }catch(e){}
+
+                            // Determine selected size from context or DOM
+                            let selectedSize = context.selectedSize || null;
+                            const sizeSelect = document.getElementById('size-select');
+                            if (!selectedSize && sizeSelect) selectedSize = sizeSelect.value || null;
+
+                            // Size feedback
+                            const order = sizeKeys; // assume reasonable order in sizes.json
+                            const selectedIndex = selectedSize ? order.indexOf(selectedSize) : -1;
+                            const recommendedIndex = order.indexOf(recommendedSize);
+                            let sizeFeedback = 'Size: Good';
+                            if (selectedSize){
+                                if (selectedIndex < 0) sizeFeedback = 'Size: Unknown selection';
+                                else if (selectedIndex < recommendedIndex) sizeFeedback = 'Size: Too small';
+                                else if (selectedIndex > recommendedIndex) sizeFeedback = 'Size: Too loose';
+                                else sizeFeedback = 'Size: Good';
+                            } else {
+                                sizeFeedback = 'Size: Auto-selected ' + recommendedSize;
+                            }
+
+                            // Pose handling
+                            const desiredPose = "'T' Pose";
+                            let poseFeedback = 'Recommended T pose';
+                            // check if already T
+                            try{ const v = getCurrentInfluenceFor(desiredPose); if (v && v>0.5) poseFeedback = 'Pose: Nice pose'; }catch(e){}
+
+                            // Apply actions: select size, set pose, set colors
+                            try{
+                                if (typeof applySizeToModel === 'function') applySizeToModel(recommendedSize);
+                                // Update any page-level select/input and SizeManager if present
+                                try{
+                                    if (sizeSelect){
+                                        // Try to match option by value or text (normalized)
+                                        const norm = s => String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+                                        let matchedOpt = null;
+                                        try{
+                                            for (let i=0;i<sizeSelect.options.length;i++){
+                                                const opt = sizeSelect.options[i];
+                                                if (!opt) continue;
+                                                const v = String(opt.value||'');
+                                                const t = String(opt.text||opt.label||'');
+                                                if (norm(v) === norm(recommendedSize) || norm(t) === norm(recommendedSize)) { matchedOpt = opt; break; }
+                                            }
+                                            if (!matchedOpt){
+                                                for (let i=0;i<sizeSelect.options.length;i++){
+                                                    const opt = sizeSelect.options[i];
+                                                    const v = String(opt.value||'');
+                                                    const t = String(opt.text||opt.label||'');
+                                                    if (norm(v).indexOf(norm(recommendedSize)) !== -1 || norm(t).indexOf(norm(recommendedSize)) !== -1) { matchedOpt = opt; break; }
+                                                }
+                                            }
+                                        }catch(e){}
+
+                                        // If we found a matching <option>, make sure the select's
+                                        // value is set to that option's value (not just mark it)
+                                        // so other scripts/readers see the same token.
+                                        let chosenSizeToken = String(recommendedSize || '').trim();
+                                        if (matchedOpt){
+                                            try{ matchedOpt.selected = true; }catch(e){}
+                                            try{ if (typeof matchedOpt.value !== 'undefined' && matchedOpt.value !== null && String(matchedOpt.value).trim() !== '') sizeSelect.value = matchedOpt.value; else sizeSelect.value = (matchedOpt.text || matchedOpt.label || matchedOpt.value); }catch(e){}
+                                            // prefer the option's value as the canonical token
+                                            try{ chosenSizeToken = (matchedOpt.value || matchedOpt.text || matchedOpt.label || chosenSizeToken); }catch(e){}
+                                        } else {
+                                            // fallback: set select.value to recommendedSize (may or may not match an actual option)
+                                            try{ sizeSelect.value = recommendedSize; }catch(e){}
+                                        }
+                                        // dispatch events so other listeners update
+                                        try{ sizeSelect.dispatchEvent(new Event('change', { bubbles: true })); }catch(e){}
+                                        try{ sizeSelect.dispatchEvent(new Event('input', { bubbles: true })); }catch(e){}
+                                    }
+                                }catch(e){}
+                                // update global currentSize for compatibility
+                                // update global currentSize for compatibility and call SizeManager
+                                try{ window.currentSize = chosenSizeToken || recommendedSize; }catch(e){}
+                                try{ if (window.SizeManager && typeof window.SizeManager.selectSize === 'function') window.SizeManager.selectSize(chosenSizeToken || recommendedSize); }catch(e){}
+                                // also click any size-option buttons so visual state updates
+                                try{
+                                    const _norm = s => String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+                                    const recNorm = _norm(recommendedSize);
+                                    document.querySelectorAll('.size-option').forEach(el=>{
+                                        const sz = el.getAttribute('data-size') || el.textContent.trim();
+                                        if (_norm(sz) === recNorm || String(sz).trim() === String(recommendedSize).trim()){
+                                            try{ el.click(); el.classList.add('active'); el.setAttribute('aria-pressed','true'); }catch(e){}
+                                        }
+                                    });
+                                }catch(e){}
+                            }catch(e){}
+
+                            try{ if (api && typeof api.setPose === 'function') api.setPose(desiredPose, POSE_SHAPES); }catch(e){}
+
+                            // Update pose UI to reflect T pose as active
+                            try{
+                                document.querySelectorAll('.pose-btn').forEach(x=>{ try{ x.classList.remove('active'); x.setAttribute('aria-pressed','false'); }catch(e){} });
+                                const pbtn = document.querySelector(`.pose-btn[data-morph="${desiredPose}"]`);
+                                if (pbtn){ try{ pbtn.classList.add('active'); pbtn.setAttribute('aria-pressed','true'); }catch(e){} }
+                            }catch(e){}
+
+                            // Update color swatches (color wheel) so UI reflects selections
+                            try{
+                                const swP = document.querySelector('input[type="color"][data-key="pants"]'); if (swP){ swP.value = pants; swP.dispatchEvent(new Event('input')); }
+                                const swS = document.querySelector('input[type="color"][data-key="shoe"]'); if (swS){ swS.value = shoes; swS.dispatchEvent(new Event('input')); }
+                                const swC = document.querySelector('input[type="color"][data-key="cap"]'); if (swC){ swC.value = cap; swC.dispatchEvent(new Event('input')); }
+                                const swSh = document.querySelector('input[type="color"][data-key="shirt"]'); if (swSh && context.shirtColor){ swSh.value = context.shirtColor; swSh.dispatchEvent(new Event('input')); }
+                            }catch(e){}
+
+                            try{ if (api && typeof api.setClothingColor === 'function') { api.setClothingColor('pants', pants); api.setClothingColor('shoe', shoes); api.setClothingColor('cap', cap); } }catch(e){}
+
+                            // Fit feedback: simple heuristics
+                            let fitFeedback = 'Fit: Looking good';
+                            if (sizeFeedback.indexOf('Too small') !== -1) fitFeedback = 'Fit: Consider sizing up for comfort';
+                            else if (sizeFeedback.indexOf('Too loose') !== -1) fitFeedback = 'Fit: Consider sizing down for a cleaner fit';
+
+                            const colorFeedback = `Pants: ${pants}, Shoes: ${shoes}, Cap: ${cap}`;
+
+                            const out = {
+                                sizeFeedback: sizeFeedback,
+                                colorFeedback: colorFeedback,
+                                poseFeedback: poseFeedback,
+                                fitFeedback: fitFeedback,
+                                actions: {
+                                    selectSize: recommendedSize,
+                                    setPose: 'T',
+                                    setColors: { pants: pants, shoes: shoes, cap: cap }
+                                }
+                            };
+
+                                    // feedback UI removed — log to console instead
+                                    try{ console.log('AI feedback:', colorFeedback + ' · ' + sizeFeedback); }catch(e){}
+
+                            return out;
+                        }).catch(err=>{
+                            // on failure, still return a best-effort result
+                            return {
+                                sizeFeedback: 'Size: Unknown',
+                                colorFeedback: `Pants: ${pants}, Shoes: ${shoes}, Cap: ${cap}`,
+                                poseFeedback: 'Recommended T pose',
+                                fitFeedback: 'Fit: Unknown',
+                                actions: { selectSize: null, setPose: 'T', setColors: { pants, shoes, cap } }
+                            };
+                        });
+                    }
+                    // attach to global API surface for callers
+                    try{ window.mannequinAPI = window.mannequinAPI || {}; window.mannequinAPI.analyzeAndApplyMannequinAI = analyzeAndApplyMannequinAI; }catch(e){}
+
+                    // Remove secondary generator buttons (keep AI button behavior)
+                    try{ document.querySelectorAll('button[title="Suggest colors"]').forEach(b=>b.remove()); }catch(e){}
+
+                    function hexToHsl(hex){
+                        hex = String(hex||'#000').replace('#','');
+                        if (hex.length===3) hex = hex.split('').map(c=>c+c).join('');
+                        const r = parseInt(hex.substr(0,2),16)/255;
+                        const g = parseInt(hex.substr(2,2),16)/255;
+                        const b = parseInt(hex.substr(4,2),16)/255;
+                        const max = Math.max(r,g,b), min = Math.min(r,g,b);
+                        let h=0, s=0, l=(max+min)/2;
+                        if (max!==min){
+                            const d = max-min;
+                            s = l>0.5? d/(2-max-min) : d/(max+min);
+                            switch(max){
+                                case r: h = (g-b)/d + (g<b?6:0); break;
+                                case g: h = (b-r)/d + 2; break;
+                                case b: h = (r-g)/d + 4; break;
+                            }
+                            h /= 6;
+                        }
+                        return { h: Math.round(h*360), s: Math.round(s*100), l: Math.round(l*100) };
+                    }
+
+                    // update feedback based on selected size and current morphs/colors
+                    window.mannequinAPI.updateAIFeedback = function(selectedSize){
+                        // Feedback UI removed; keep function as a noop for compatibility
+                        try{ console.log('updateAIFeedback called for', selectedSize); }catch(e){}
+                    };
+                    // generate a more detailed AI feedback array for the AI button
+                    window.mannequinAPI.generateFullAIFeedback = function(){
+                        // Detailed AI feedback feature removed — return minimal message
+                        try{ return ['AI feedback disabled']; }catch(e){ return ['AI feedback disabled']; }
+                    };
+                }catch(e){ /* ignore */ }
+            })();
 
             function applySizeToModel(sizeName){
                 if (!sizeName) return;
@@ -1561,6 +2087,8 @@ function initViewer() {
                 try{ applyClothingPoseForActiveBodyPose(sizeNorm); }catch(e){}
                 // ensure special clothing meshes mirror body morphs (measurements + poses)
                 try{ copyBodyToSpecialClothing(); }catch(e){}
+                // update AI feedback (short & to the point)
+                try{ if (window.mannequinAPI && typeof window.mannequinAPI.updateAIFeedback === 'function') window.mannequinAPI.updateAIFeedback(sizeInput); }catch(e){}
             }
 
             // --- Debug console reporter ---
